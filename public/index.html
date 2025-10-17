@@ -691,22 +691,50 @@
             db: null,
             auth: null,
             functions: null,
+            isReady: false,
+            isAuthenticated: false,
             init: function() {
                 try {
                     const app = initializeApp(firebaseConfig);
                     this.db = getFirestore(app);
                     this.auth = getAuth(app);
                     this.functions = getFunctions(app, 'europe-west2');
+                    
+                    // Wait for authentication before marking as ready
                     signInAnonymously(this.auth).then(() => {
+                        console.log("✅ Firebase authenticated successfully");
+                        this.isAuthenticated = true;
+                        this.isReady = true;
                         document.dispatchEvent(new CustomEvent('firebase-shop-ready'));
                     }).catch(e => {
-                        console.error("Anonymous sign-in failed:", e);
+                        console.error("❌ Anonymous sign-in failed:", e);
                         document.dispatchEvent(new CustomEvent('firebase-error', { detail: e.message }));
                     });
                 } catch(e) { 
-                    console.error("Firebase Init Error:", e.message);
+                    console.error("❌ Firebase Init Error:", e.message);
                     document.dispatchEvent(new CustomEvent('firebase-error', { detail: e.message }));
                 }
+            },
+            // Helper function to ensure Firebase is ready before making calls
+            waitUntilReady: async function() {
+                if (this.isReady && this.isAuthenticated) {
+                    return Promise.resolve();
+                }
+                return new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        reject(new Error('Firebase initialization timeout'));
+                    }, 10000); // 10 second timeout
+                    
+                    const checkReady = () => {
+                        if (this.isReady && this.isAuthenticated) {
+                            clearTimeout(timeout);
+                            resolve();
+                        } else {
+                            setTimeout(checkReady, 100);
+                        }
+                    };
+                    checkReady();
+                });
             },
             collection, onSnapshot, doc, addDoc, serverTimestamp, writeBatch, httpsCallable
         };
@@ -862,11 +890,22 @@
                         this.isLoadingPayment = true;
                         
                         try {
+                            // Ensure Firebase is fully initialized and authenticated
+                            console.log('⏳ Waiting for Firebase initialization...');
+                            await window.firebaseShopServices.waitUntilReady();
+                            console.log('✅ Firebase ready, proceeding with payment...');
+                            
                             // Calculate total in pence (SumUp requires smallest currency unit)
                             const totalInPence = Math.round(this.cartTotal * 100);
                             
-                            // Call Cloud Function to create SumUp checkout
+                            // Call Cloud Function to create SumUp checkout using Firebase SDK
                             const { functions, httpsCallable } = window.firebaseShopServices;
+                            
+                            if (!functions) {
+                                throw new Error('Firebase Functions not initialized');
+                            }
+                            
+                            console.log('📞 Calling createSumupCheckout function...');
                             const createCheckout = httpsCallable(functions, 'createSumupCheckout');
                             
                             const result = await createCheckout({
@@ -875,6 +914,8 @@
                                 description: `JunkShop Order - ${this.cartItems.length} item(s)`,
                                 customerEmail: this.checkoutForm.email
                             });
+                            
+                            console.log('✅ Function call successful:', result);
                             
                             // Verify we received the hosted checkout URL
                             if (!result.data || !result.data.hostedCheckoutUrl) {
@@ -885,15 +926,24 @@
                             await this.savePendingOrder(result.data.checkoutId, result.data.checkoutReference);
                             
                             // Redirect to SumUp hosted checkout page
-                            console.log('Redirecting to SumUp payment page:', result.data.hostedCheckoutUrl);
+                            console.log('🔄 Redirecting to SumUp payment page:', result.data.hostedCheckoutUrl);
                             window.location.href = result.data.hostedCheckoutUrl;
                             
                         } catch (error) {
-                            console.error('Checkout error:', error);
+                            console.error('❌ Checkout error:', error);
                             let errorMessage = 'Payment setup failed. Please try again.';
-                            if (error.message) {
+                            
+                            // Provide more specific error messages
+                            if (error.code === 'unauthenticated') {
+                                errorMessage = 'Authentication error. Please refresh the page and try again.';
+                            } else if (error.code === 'permission-denied') {
+                                errorMessage = 'Permission denied. Please check your connection and try again.';
+                            } else if (error.message.includes('timeout')) {
+                                errorMessage = 'Connection timeout. Please check your internet connection and try again.';
+                            } else if (error.message) {
                                 errorMessage += ` Error: ${error.message}`;
                             }
+                            
                             alert(errorMessage);
                             this.isLoadingPayment = false;
                         }
