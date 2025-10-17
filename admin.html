@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JunkShop - Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .btn-primary { background-color: #d9a478; color: white; transition: background-color 0.3s ease; }
+        .btn-primary:hover { background-color: #c88f61; }
+        .btn-danger { background-color: #e57373; color: white; transition: background-color: 0.3s ease; }
+        .btn-danger:hover { background-color: #ef5350; }
+        .btn-secondary { background-color: #a1a1aa; color: white; transition: background-color: 0.3s ease; }
+        .btn-secondary:hover { background-color: #71717a; }
+        [x-cloak] { display: none !important; }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #d9a478;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100" x-data="admin" x-init="init()" x-cloak>
+
+    <div class="container mx-auto p-8">
+        <h1 class="text-3xl font-bold mb-6 text-gray-800">JunkShop Admin Dashboard</h1>
+
+        <div x-show="!loggedIn" class="max-w-md mx-auto bg-white p-8 rounded-lg shadow-md">
+            <h2 class="text-2xl font-bold mb-6 text-center">Admin Login</h2>
+            <form @submit.prevent="login">
+                <div class="mb-4">
+                    <label for="email" class="block text-gray-700 mb-2">Email</label>
+                    <input type="email" id="email" x-model="email" class="w-full p-2 border border-gray-300 rounded-lg" required>
+                </div>
+                <div class="mb-6">
+                    <label for="password" class="block text-gray-700 mb-2">Password</label>
+                    <input type="password" id="password" x-model="password" class="w-full p-2 border border-gray-300 rounded-lg" required>
+                </div>
+                <button type="submit" class="w-full btn-primary font-semibold py-2 px-4 rounded-lg">Login</button>
+                <p x-show="loginError" class="text-red-500 text-center mt-4" x-text="loginError"></p>
+            </form>
+        </div>
+
+        <div x-show="loggedIn">
+             <div x-show="dataFetchError" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-6" role="alert">
+                <strong class="font-bold">Data Fetch Error!</strong>
+                <span class="block sm:inline" x-text="dataFetchError"></span>
+            </div>
+
+            <div class="flex justify-between items-center mb-6">
+                <p>Welcome, <span x-text="userEmail"></span></p>
+                <button @click="logout()" class="btn-danger font-semibold py-2 px-4 rounded-lg">Logout</button>
+            </div>
+            
+            <div class="mb-6 border-b border-gray-300">
+                <nav class="flex space-x-8">
+                    <button @click="activeTab = 'products'" :class="{'border-b-2 border-[#d9a478] text-[#d9a478]': activeTab === 'products'}" class="py-2 font-semibold text-gray-600">Manage Products</button>
+                    <button @click="activeTab = 'orders'" :class="{'border-b-2 border-[#d9a478] text-[#d9a478]': activeTab === 'orders'}" class="py-2 font-semibold text-gray-600">View Orders</button>
+                </nav>
+            </div>
+
+            <div x-show="activeTab === 'products'">
+                <div class="flex justify-between items-center mb-4">
+                     <div>
+                        <label for="admin-category-filter" class="sr-only">Filter by category</label>
+                        <select id="admin-category-filter" x-model="adminSelectedCategory" class="w-full md:w-64 p-2 border rounded-lg">
+                            <option value="All">All Categories</option>
+                            <template x-for="category in adminCategories" :key="category">
+                                <option :value="category" x-text="category"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <button @click="openProductModal(null)" class="btn-primary font-semibold py-2 px-4 rounded-lg">Add New Product</button>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-xl font-bold mb-4">Your Products</h2>
+                    <p x-show="products.length === 0" class="text-center text-gray-500">No products found. Click "Add New Product" to get started.</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <template x-for="product in filteredAdminProducts" :key="product.id">
+                            <div class="border rounded-lg p-4 flex flex-col justify-between" :class="{'bg-gray-50': product.status === 'sold'}">
+                                <div>
+                                    <div class="w-full h-40 bg-gray-200 rounded-md mb-4 flex items-center justify-center relative">
+                                        <img :src="product.images && product.images.length > 0 ? product.images[0] : 'https://placehold.co/600x400/f5f5f5/333?text=No+Image'" class="max-w-full max-h-full object-contain">
+                                         <span x-show="product.status === 'sold'" class="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold uppercase px-2 py-1 rounded-full">Sold</span>
+                                    </div>
+                                    <h3 class="font-bold text-lg" x-text="product.name"></h3>
+                                     <p class="text-xs bg-gray-200 text-gray-800 rounded-full px-2 py-1 inline-block" x-text="product.category || 'No Category'"></p>
+                                    <p class="text-gray-600 mt-2" x-text="`Price: £${parseFloat(product.price).toFixed(2)}`"></p>
+                                    <p class="text-gray-600 text-sm" x-text="product.postage === 'POA' ? 'Postage: POA' : `Postage: £${parseFloat(product.postage || 0).toFixed(2)}`"></p>
+                                    <div class="mt-2 space-y-1">
+                                        <p class="text-sm font-semibold" :class="product.isFeatured ? 'text-green-600' : 'text-gray-500'" x-text="product.isFeatured ? '✔ Featured' : 'Not Featured'"></p>
+                                        <p class="text-sm font-semibold" :class="product.isHero ? 'text-blue-600' : 'text-gray-500'" x-text="product.isHero ? '★ Hero Product' : 'Not Hero'"></p>
+                                        <p class="text-sm font-semibold capitalize" :class="product.status === 'sold' ? 'text-red-500' : 'text-green-600'" x-text="product.status || 'Active'"></p>
+                                    </div>
+                                </div>
+                                <div class="flex justify-end space-x-2 mt-4">
+                                    <button @click="openProductModal(product)" class="text-sm bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-1 px-3 rounded-lg">Edit</button>
+                                    <button @click="deleteProduct(product.id)" class="text-sm btn-danger font-semibold py-1 px-3 rounded-lg">Delete</button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+            <div x-show="activeTab === 'orders'">
+                <div class="mb-4 border-b border-gray-300">
+                    <nav class="flex space-x-4">
+                         <button @click="orderView = 'new'" :class="{'border-b-2 border-primary text-primary': orderView === 'new'}" class="py-2 font-semibold text-gray-600">New (<span x-text="newOrders.length"></span>)</button>
+                         <button @click="orderView = 'shipped'" :class="{'border-b-2 border-primary text-primary': orderView === 'shipped'}" class="py-2 font-semibold text-gray-600">Shipped (<span x-text="shippedOrders.length"></span>)</button>
+                         <button @click="orderView = 'completed'" :class="{'border-b-2 border-primary text-primary': orderView === 'completed'}" class="py-2 font-semibold text-gray-600">Completed (<span x-text="completedOrders.length"></span>)</button>
+                    </nav>
+                </div>
+                 <div class="bg-white p-6 rounded-lg shadow-md">
+                    <div x-show="orderView === 'new'"><h2 class="text-xl font-bold mb-4">New Orders</h2><div class="space-y-4"><template x-for="order in newOrders" :key="order.id"><div class="border rounded-lg p-4"><p class="text-sm font-mono" x-text="order.id"></p><div class="flex justify-between items-center"><p><span x-text="new Date(order.createdAt.seconds * 1000).toLocaleDateString()"></span> - <strong x-text="order.customerDetails ? order.customerDetails.name : 'N/A'"></strong></p><button @click="openOrderModal(order)" class="text-sm btn-secondary font-semibold py-1 px-3 rounded-lg">View Details</button></div></div></template><p x-show="newOrders.length === 0">No new orders.</p></div></div>
+                    <div x-show="orderView === 'shipped'"><h2 class="text-xl font-bold mb-4">Shipped Orders</h2><div class="space-y-4"><template x-for="order in shippedOrders" :key="order.id"><div class="border rounded-lg p-4 bg-blue-50"><p class="text-sm font-mono" x-text="order.id"></p><div class="flex justify-between items-center"><p><span x-text="new Date(order.createdAt.seconds * 1000).toLocaleDateString()"></span> - <strong x-text="order.customerDetails ? order.customerDetails.name : 'N/A'"></strong></p><button @click="openOrderModal(order)" class="text-sm btn-secondary font-semibold py-1 px-3 rounded-lg">View Details</button></div></div></template><p x-show="shippedOrders.length === 0">No shipped orders.</p></div></div>
+                    <div x-show="orderView === 'completed'"><h2 class="text-xl font-bold mb-4">Completed Orders</h2><div class="space-y-4"><template x-for="order in completedOrders" :key="order.id"><div class="border rounded-lg p-4 bg-gray-50"><p class="text-sm font-mono" x-text="order.id"></p><div class="flex justify-between items-center"><p><span x-text="new Date(order.createdAt.seconds * 1000).toLocaleDateString()"></span> - <strong x-text="order.customerDetails ? order.customerDetails.name : 'N/A'"></strong></p><button @click="openOrderModal(order)" class="text-sm btn-secondary font-semibold py-1 px-3 rounded-lg">View Details</button></div></div></template><p x-show="completedOrders.length === 0">No completed orders.</p></div></div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Product Modal -->
+    <div x-show="productModalOpen" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div @click.away="productModalOpen = false" class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div class="p-6 relative">
+                 <div x-show="isUploading" class="absolute inset-0 bg-white bg-opacity-80 flex flex-col items-center justify-center z-20">
+                    <div class="loader"></div>
+                    <p class="mt-2 text-gray-600">Uploading images, please wait...</p>
+                </div>
+                <h2 class="text-2xl font-bold mb-6" x-text="isEditing ? 'Edit Product' : 'Add New Product'"></h2>
+                <form @submit.prevent="saveProduct">
+                    <div x-show="uploadError" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+                        <strong class="font-bold">Save Failed!</strong>
+                        <span class="block sm:inline" x-text="uploadError"></span>
+                    </div>
+
+                    <div class="mb-4"><label class="block mb-1">Product Name</label><input type="text" x-model="productForm.name" class="w-full p-2 border rounded" required></div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="mb-4"><label class="block mb-1">Price (£)</label><input type="number" step="0.01" x-model="productForm.price" class="w-full p-2 border rounded" required></div>
+                        <div class="mb-4">
+                            <label class="block mb-1">Postage Cost (£)</label>
+                            <input type="number" step="0.01" x-model="productForm.postage" class="w-full p-2 border rounded" :disabled="productForm.postagePOA">
+                        </div>
+                    </div>
+                    <div class="mb-4 flex items-center">
+                        <input type="checkbox" id="isPOA" x-model="productForm.postagePOA" class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                        <label for="isPOA" class="ml-2 block text-sm text-gray-900">Postage on Application (POA)</label>
+                    </div>
+                     <div class="mb-4">
+                        <label class="block mb-1">Category</label>
+                        <select x-model="productForm.category" class="w-full p-2 border rounded" required>
+                            <option value="" disabled>Select a category</option>
+                            <option value="Antiques">Antiques</option>
+                            <option value="Art">Art</option>
+                            <option value="Books">Books</option>
+                            <option value="Cameras">Cameras</option>
+                            <option value="Clothing & Accessories">Clothing & Accessories</option>
+                            <option value="Clocks">Clocks</option>
+                            <option value="Collectibles">Collectibles</option>
+                            <option value="Computing">Computing</option>
+                            <option value="Decor">Decor</option>
+                            <option value="Fabric">Fabric</option>
+                            <option value="Furniture">Furniture</option>
+                            <option value="Jewellery & Watches">Jewellery & Watches</option>
+                            <option value="Lamps & Lighting">Lamps & Lighting</option>
+                            <option value="Mobility">Mobility</option>
+                            <option value="Musical Instruments & DJ">Musical Instruments & DJ</option>
+                            <option value="Pottery Ceramics & Glass">Pottery Ceramics & Glass</option>
+                            <option value="Projectors">Projectors</option>
+                            <option value="Record Players">Record Players</option>
+                            <option value="Rugs">Rugs</option>
+                            <option value="Sewing Machines">Sewing Machines</option>
+                            <option value="Sound & Vision">Sound & Vision</option>
+                            <option value="Sports">Sports</option>
+                            <option value="Tools">Tools</option>
+                            <option value="Toys & Games">Toys & Games</option>
+                            <option value="TV’s">TV’s</option>
+                            <option value="Vintage">Vintage</option>
+                        </select>
+                    </div>
+                    <div class="mb-4"><label class="block mb-1">Description</label><textarea x-model="productForm.description" class="w-full p-2 border rounded" rows="4" required></textarea></div>
+                    
+                    <div class="mb-4">
+                        <label class="block mb-1">Images</label>
+                        <input type="file" @change="handleFileSelect" multiple class="w-full p-2 border rounded" accept="image/*">
+                        <div class="mt-4 grid grid-cols-3 gap-4" x-show="imagePreviews.length > 0">
+                            <template x-for="(src, index) in imagePreviews" :key="index">
+                                <div class="relative">
+                                    <img :src="src" class="w-full h-24 object-cover rounded">
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block mb-1">Status</label>
+                        <select x-model="productForm.status" class="w-full p-2 border rounded">
+                            <option value="active">Active</option>
+                            <option value="sold">Sold</option>
+                        </select>
+                    </div>
+
+                    <div class="space-y-2">
+                        <div class="flex items-center">
+                            <input type="checkbox" id="isFeatured" x-model="productForm.isFeatured" class="h-4 w-4 text-[#d9a478] focus:ring-[#c88f61] border-gray-300 rounded">
+                            <label for="isFeatured" class="ml-2 block text-sm text-gray-900">Feature this item on homepage</label>
+                        </div>
+                         <div class="flex items-center">
+                            <input type="checkbox" id="isHero" x-model="productForm.isHero" class="h-4 w-4 text-[#d9a478] focus:ring-[#c88f61] border-gray-300 rounded">
+                            <label for="isHero" class="ml-2 block text-sm text-gray-900">Set as Hero Product (for homepage slideshow)</label>
+                        </div>
+                    </div>
+
+
+                    <div class="flex justify-end space-x-4 mt-6">
+                        <button type="button" @click="productModalOpen = false" class="bg-gray-200 font-semibold py-2 px-4 rounded-lg">Cancel</button>
+                        <button type="submit" class="btn-primary font-semibold py-2 px-4 rounded-lg" :disabled="isUploading">
+                             <span x-show="!isUploading">Save Product</span>
+                             <span x-show="isUploading">Saving...</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Order Modal -->
+    <div x-show="orderModalOpen" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div @click.away="orderModalOpen = false" class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <template x-if="selectedOrder">
+                <div class="p-6">
+                     <div class="flex justify-between items-start">
+                        <h2 class="text-2xl font-bold mb-6">Order Details</h2>
+                        <button @click="orderModalOpen = false" class="text-gray-500 hover:text-gray-800">&times;</button>
+                    </div>
+                    <div x-show="orderModalError" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative my-4" role="alert">
+                        <span class="block sm:inline" x-text="orderModalError"></span>
+                    </div>
+                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div>
+                            <p class="font-bold">Order Details:</p> 
+                            <p class="text-sm"><span class="font-semibold">ID:</span> <span x-text="selectedOrder.id"></span></p>
+                            <p class="text-sm"><span class="font-semibold">Date:</span> <span x-text="new Date(selectedOrder.createdAt.seconds * 1000).toLocaleString()"></span></p>
+                            <p class="text-sm"><span class="font-semibold">Total:</span> <span x-text="`£${selectedOrder.total.toFixed(2)}`"></span></p>
+                            <p class="text-sm font-semibold capitalize mt-2" x-text="selectedOrder.deliveryMethod" :class="selectedOrder.deliveryMethod === 'delivery' ? 'text-blue-600' : 'text-green-600'"></p>
+                        </div>
+                         <div>
+                            <p class="font-bold">Customer Details:</p>
+                            <template x-if="selectedOrder.customerDetails">
+                                <div>
+                                    <p class="text-sm" x-text="selectedOrder.customerDetails.name"></p>
+                                    <p class="text-sm" x-text="selectedOrder.customerDetails.email"></p>
+                                    <template x-if="selectedOrder.deliveryMethod === 'delivery'">
+                                        <div class="mt-2 text-sm">
+                                            <p x-text="selectedOrder.customerDetails.address"></p>
+                                            <p x-text="selectedOrder.customerDetails.city"></p>
+                                            <p x-text="selectedOrder.customerDetails.postcode"></p>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                             <template x-if="!selectedOrder.customerDetails">
+                                <p class="text-sm text-gray-500">Not available for this order.</p>
+                            </template>
+                        </div>
+                        <div>
+                            <p class="font-bold">Items:</p>
+                            <ul class="list-disc list-inside text-sm">
+                                <template x-for="item in selectedOrder.items" :key="item.id">
+                                    <li x-text="`${item.name} (x${item.quantity})`"></li>
+                                </template>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="mt-6 border-t pt-4">
+                        <h3 class="font-bold mb-2">Update Status</h3>
+                        <div class="flex space-x-2">
+                             <button @click="updateOrderStatus(selectedOrder.id, 'new')" class="text-sm btn-secondary font-semibold py-1 px-3 rounded-lg" :disabled="selectedOrder.status === 'new'">Mark as New</button>
+                             <button @click="updateOrderStatus(selectedOrder.id, 'shipped')" class="text-sm btn-secondary font-semibold py-1 px-3 rounded-lg" :disabled="selectedOrder.status === 'shipped'">Mark as Shipped</button>
+                             <button @click="updateOrderStatus(selectedOrder.id, 'completed')" class="text-sm btn-secondary font-semibold py-1 px-3 rounded-lg" :disabled="selectedOrder.status === 'completed'">Mark as Completed</button>
+                             <button @click="deleteOrder(selectedOrder.id)" class="text-sm btn-danger font-semibold py-1 px-3 rounded-lg">Delete Order</button>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div x-show="confirmModal.open" class="fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4">
+        <div @click.away="confirmModal.open = false" class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <h2 class="text-xl font-bold mb-4" x-text="confirmModal.title"></h2>
+            <p x-text="confirmModal.message"></p>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button @click="confirmModal.open = false" class="bg-gray-200 font-semibold py-2 px-4 rounded-lg">Cancel</button>
+                <button @click="executeConfirm()" class="btn-danger font-semibold py-2 px-4 rounded-lg">Yes, Delete</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, doc, addDoc, setDoc, deleteDoc, serverTimestamp, writeBatch, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDnxZSN9VgIp2YE1qiZJdH9PYAx2ES_3tc",
+            authDomain: "junkshop-website-gem.firebaseapp.com",
+            projectId: "junkshop-website-gem",
+            storageBucket: "junkshop-website-gem.firebasestorage.app",
+            messagingSenderId: "233182522533",
+            appId: "1:233182522533:web:9bc09e8730ca62e15df14c",
+            measurementId: "G-DL2J14LQP0"
+        };
+
+        window.firebaseAdminServices = {
+            auth: null, db: null, storage: null,
+            init: function() {
+                 try {
+                    const app = initializeApp(firebaseConfig);
+                    this.auth = getAuth(app); this.db = getFirestore(app); this.storage = getStorage(app);
+                    document.dispatchEvent(new CustomEvent('firebase-admin-ready'));
+                } catch(e) { console.error("Firebase Init Error:", e.message); }
+            },
+            signInWithEmailAndPassword, signOut, onAuthStateChanged, collection, onSnapshot, doc, addDoc, setDoc, deleteDoc, serverTimestamp, ref, uploadBytes, getDownloadURL, writeBatch, updateDoc
+        };
+        window.firebaseAdminServices.init();
+    </script>
+    
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('admin', function() {
+                return {
+                    loggedIn: false, userEmail: '', loginError: '', activeTab: 'products', products: [], orders: [],
+                    productModalOpen: false, isEditing: false, 
+                    productForm: { id: null, name: '', price: '', postage: 0, postagePOA: false, category: '', description: '', isFeatured: false, isHero: false, status: 'active' },
+                    selectedFiles: [], imagePreviews: [], isUploading: false, uploadError: '', email: '', password: '',
+                    dataFetchError: '',
+                    orderView: 'new',
+                    orderModalOpen: false,
+                    selectedOrder: null,
+                    orderModalError: '',
+                    confirmModal: { open: false, title: '', message: '', onConfirm: null },
+                    adminSelectedCategory: 'All',
+                    
+                    init() { document.addEventListener('firebase-admin-ready', () => this.initFirebase()); },
+                    initFirebase() {
+                        const { auth, onAuthStateChanged } = window.firebaseAdminServices;
+                        onAuthStateChanged(auth, user => {
+                            this.loggedIn = !!user;
+                            if (user) { this.userEmail = user.email; this.fetchProducts(); this.fetchOrders(); }
+                        });
+                    },
+                    async login() {
+                        this.loginError = '';
+                        const { auth, signInWithEmailAndPassword } = window.firebaseAdminServices;
+                        try { await signInWithEmailAndPassword(auth, this.email, this.password); } catch (error) { this.loginError = `Login Failed: ${error.message}`; }
+                    },
+                    logout() { window.firebaseAdminServices.signOut(window.firebaseAdminServices.auth); this.userEmail = ''; },
+                    fetchProducts() {
+                        const { db, collection, onSnapshot } = window.firebaseAdminServices;
+                        const productsRef = collection(db, `products`);
+                        onSnapshot(productsRef, snapshot => { this.products = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); }, error => { console.error("Error fetching products:", error); this.dataFetchError = "Failed to fetch data. Please check your Firestore security rules in the Firebase Console."; });
+                    },
+                    fetchOrders() {
+                        const { db, collection, onSnapshot } = window.firebaseAdminServices;
+                        const ordersRef = collection(db, `orders`);
+                        onSnapshot(ordersRef, snapshot => { this.orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => b.createdAt.seconds - a.createdAt.seconds); }, error => { console.error("Error fetching orders:", error); this.dataFetchError = "Failed to fetch data. Please check your Firestore security rules in the Firebase Console."; });
+                    },
+                    get newOrders() { return this.orders.filter(o => o.status === 'new'); },
+                    get shippedOrders() { return this.orders.filter(o => o.status === 'shipped'); },
+                    get completedOrders() { return this.orders.filter(o => o.status === 'completed'); },
+                    get adminCategories() {
+                        const allCategories = this.products.map(p => p.category).filter(Boolean);
+                        return [...new Set(allCategories)].sort();
+                    },
+                    get filteredAdminProducts() {
+                        if (this.adminSelectedCategory === 'All') { return this.products; }
+                        return this.products.filter(p => p.category === this.adminSelectedCategory);
+                    },
+                    
+                    openOrderModal(order) {
+                        this.selectedOrder = order;
+                        this.orderModalError = '';
+                        this.orderModalOpen = true;
+                    },
+                    async updateOrderStatus(id, status) {
+                        this.orderModalError = '';
+                        const { db, doc, updateDoc } = window.firebaseAdminServices;
+                        try {
+                            await updateDoc(doc(db, "orders", id), { status: status });
+                            this.orderModalOpen = false;
+                        } catch(e) {
+                            this.orderModalError = `Error updating status: ${e.message}`;
+                        }
+                    },
+                    deleteOrder(id) {
+                        this.confirmModal = {
+                            open: true,
+                            title: 'Delete Order',
+                            message: 'Are you sure you want to permanently delete this order?',
+                            onConfirm: () => this.executeDeleteOrder(id)
+                        };
+                    },
+                    async executeDeleteOrder(id) {
+                        const { db, doc, deleteDoc } = window.firebaseAdminServices;
+                        try {
+                            await deleteDoc(doc(db, `orders`, id));
+                            this.confirmModal.open = false;
+                            this.orderModalOpen = false;
+                        } catch (error) {
+                            this.orderModalError = `Error deleting order: ${error.message}`;
+                            this.confirmModal.open = false;
+                        }
+                    },
+                    executeConfirm() {
+                        if (this.confirmModal.onConfirm) {
+                            this.confirmModal.onConfirm();
+                        }
+                    },
+
+                    openProductModal(product) {
+                        this.selectedFiles = []; this.imagePreviews = []; this.uploadError = '';
+                        if (product) {
+                            this.isEditing = true;
+                            this.productForm = { 
+                                id: product.id, 
+                                name: product.name, 
+                                price: product.price, 
+                                postage: product.postage === 'POA' ? 0 : product.postage || 0, 
+                                postagePOA: product.postage === 'POA',
+                                category: product.category || '', 
+                                description: product.description, 
+                                isFeatured: product.isFeatured || false, 
+                                isHero: product.isHero || false,
+                                status: product.status || 'active' 
+                            };
+                            if (product.images) { this.imagePreviews = [...product.images]; }
+                        } else {
+                            this.isEditing = false;
+                            this.productForm = { id: null, name: '', price: 0, postage: 0, postagePOA: false, category: '', description: '', isFeatured: false, isHero: false, status: 'active' };
+                        }
+                        this.productModalOpen = true;
+                    },
+                    handleFileSelect(event) {
+                        this.selectedFiles = [...event.target.files]; this.imagePreviews = [];
+                        for (const file of this.selectedFiles) {
+                            const reader = new FileReader();
+                            reader.onload = (e) => this.imagePreviews.push(e.target.result);
+                            reader.readAsDataURL(file);
+                        }
+                    },
+                    async uploadImages() {
+                        const { storage, ref, uploadBytes, getDownloadURL } = window.firebaseAdminServices;
+                        const uploadedUrls = [];
+                        for (const file of this.selectedFiles) {
+                            const storageRef = ref(storage, `products/${Date.now()}-${file.name}`);
+                            await uploadBytes(storageRef, file);
+                            const url = await getDownloadURL(storageRef);
+                            uploadedUrls.push(url);
+                        }
+                        return uploadedUrls;
+                    },
+                    async saveProduct() {
+                        this.isUploading = true;
+                        this.uploadError = '';
+                        try {
+                            let imageUrls = [];
+                            if (this.selectedFiles.length > 0) { 
+                                imageUrls = await this.uploadImages(); 
+                            } else { 
+                                const originalProduct = this.products.find(p => p.id === this.productForm.id); 
+                                if (originalProduct) { imageUrls = originalProduct.images || []; } 
+                            }
+                            
+                            const { db, collection, doc, setDoc, addDoc } = window.firebaseAdminServices;
+                            const productData = {
+                                name: this.productForm.name,
+                                price: parseFloat(this.productForm.price),
+                                postage: this.productForm.postagePOA ? 'POA' : parseFloat(this.productForm.postage),
+                                category: this.productForm.category,
+                                description: this.productForm.description,
+                                images: imageUrls,
+                                isFeatured: this.productForm.isFeatured,
+                                isHero: this.productForm.isHero,
+                                status: this.productForm.status,
+                            };
+
+                            const productsRef = collection(db, `products`);
+                            if (this.isEditing) { await setDoc(doc(productsRef, this.productForm.id), productData); } 
+                            else { await addDoc(productsRef, productData); }
+
+                            this.productModalOpen = false;
+                        } catch (error) {
+                            console.error("Save Product Error: ", error);
+                            if (error.code === 'storage/unauthorized') { this.uploadError = "Permission Denied. Please check Storage security rules."; } 
+                            else { this.uploadError = `Error: ${error.message}`; }
+                        } finally {
+                            this.isUploading = false;
+                        }
+                    },
+                    deleteProduct(id) {
+                        this.confirmModal = {
+                            open: true,
+                            title: 'Delete Product',
+                            message: 'Are you sure you want to permanently delete this product? This cannot be undone.',
+                            onConfirm: () => this.executeDeleteProduct(id)
+                        };
+                    },
+                    async executeDeleteProduct(id) {
+                         const { db, doc, deleteDoc } = window.firebaseAdminServices;
+                        try {
+                           await deleteDoc(doc(db, `products`, id));
+                           this.confirmModal.open = false;
+                        } catch(e) {
+                            this.dataFetchError = `Error deleting product: ${e.message}`;
+                            this.confirmModal.open = false;
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+
+

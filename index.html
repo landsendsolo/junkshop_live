@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JunkShop - Antiques & Collectibles</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: var(--color-bg-base);
+            color: var(--color-text-base);
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        :root, body.theme-light {
+            --color-bg-base: #ffffff;
+            --color-bg-muted: #f5f5f5;
+            --color-text-base: #1f2937;
+            --color-text-muted: #6b7280;
+            --color-border-base: #e5e7eb;
+            --color-primary: #d9a478;
+            --color-primary-hover: #c88f61;
+        }
+
+        body.theme-sepia {
+            --color-bg-base: #fdf8f0;
+            --color-bg-muted: #f3ece2;
+            --color-text-base: #5d4037;
+            --color-text-muted: #8d6e63;
+            --color-border-base: #d7ccc8;
+            --color-primary: #a1887f;
+            --color-primary-hover: #8d6e63;
+        }
+
+        body.theme-charcoal {
+            --color-bg-base: #1f2937;
+            --color-bg-muted: #374151;
+            --color-text-base: #f9fafb;
+            --color-text-muted: #9ca3af;
+            --color-border-base: #4b5563;
+            --color-primary: #d9a478;
+            --color-primary-hover: #e5b892;
+        }
+
+        body.theme-slate {
+            --color-bg-base: #2f3e46;
+            --color-bg-muted: #354f52;
+            --color-text-base: #cad2c5;
+            --color-text-muted: #84a98c;
+            --color-border-base: #52796f;
+            --color-primary: #d9a478;
+            --color-primary-hover: #e5b892;
+        }
+        
+        body.theme-parchment {
+            --color-bg-base: #f5f3e7;
+            --color-bg-muted: #e8e4d8;
+            --color-text-base: #4a4039;
+            --color-text-muted: #796a5f;
+            --color-border-base: #d3ccc1;
+            --color-primary: #8a6f5e;
+            --color-primary-hover: #796150;
+        }
+        
+        .modal-overlay { transition: opacity 0.3s ease-in-out; }
+        .modal-content { transition: transform 0.3s ease-in-out; }
+        .img-zoom-container { position: relative; }
+        .img-zoom-lens { position: absolute; border: 1px solid #d4d4d4; width: 100px; height: 100px; background-color: rgba(255,255,255,0.4); pointer-events: none; }
+        .img-zoom-result { border: 1px solid #d4d4d4; width: 400px; height: 400px; background-repeat: no-repeat; position: absolute; left: 105%; top: 0; z-index: 100; box-shadow: 0 4px 15px rgba(0,0,0,0.2); pointer-events: none; }
+        [x-cloak] { display: none !important; }
+
+        .prose h3 {
+            font-weight: 700;
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+        }
+        .prose p {
+            margin-bottom: 1em;
+        }
+        .prose ul {
+            list-style-position: inside;
+            list-style-type: disc;
+            margin-bottom: 1em;
+            padding-left: 1.5em;
+        }
+         .prose li {
+            margin-bottom: 0.5em;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid var(--color-primary);
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': 'var(--color-primary)',
+                        'primary-hover': 'var(--color-primary-hover)',
+                        'bg-base': 'var(--color-bg-base)',
+                        'bg-muted': 'var(--color-bg-muted)',
+                        'text-base': 'var(--color-text-base)',
+                        'text-muted': 'var(--color-text-muted)',
+                        'border-base': 'var(--color-border-base)',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body x-data="shop" x-init="init()" :class="`theme-${theme}`" x-cloak>
+
+    <div x-show="initError" class="fixed inset-0 bg-red-100 text-red-800 z-50 flex items-center justify-center p-8 text-center" x-cloak>
+        <div>
+            <h2 class="text-2xl font-bold mb-4">Website Configuration Error</h2>
+            <p class="mb-4" x-text="initError"></p>
+            <p>Please go to your Firebase Console → Authentication → Sign-in method → Add new provider, and enable 'Anonymous' sign-in.</p>
+        </div>
+    </div>
+
+    <div x-show="isLoadingPayment" class="fixed inset-0 bg-black bg-opacity-50 z-[100] flex flex-col items-center justify-center" x-cloak>
+        <div class="loader"></div>
+        <p class="text-white mt-4">Connecting to secure payment gateway...</p>
+    </div>
+
+    <header class="bg-bg-base border-b border-border-base sticky top-0 z-40">
+        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <a href="#" @click.prevent="currentView = 'home'" class="text-2xl font-bold text-text-base">JunkShop</a>
+            <div class="hidden md:flex items-center space-x-6">
+                <a href="#" @click.prevent="currentView = 'home'" :class="{'text-text-base font-semibold': currentView === 'home', 'text-text-muted': currentView !== 'home'}" class="hover:text-text-base">Home</a>
+                <a href="#" @click.prevent="currentView = 'stock'" :class="{'text-text-base font-semibold': currentView === 'stock', 'text-text-muted': currentView !== 'stock'}" class="hover:text-text-base">Shop</a>
+                <a href="#" @click.prevent="currentView = 'about'" :class="{'text-text-base font-semibold': currentView === 'about', 'text-text-muted': currentView !== 'about'}" class="hover:text-text-base">About Us</a>
+                <a href="#contact" class="text-text-muted hover:text-text-base">Contact</a>
+            </div>
+            <div class="flex items-center space-x-2">
+                <button @click="cycleTheme()" title="Change theme" class="relative text-text-muted hover:text-text-base p-2 rounded-full hover:bg-bg-muted">
+                     <span class="text-xl">🎨</span>
+                </button>
+                <button @click="cartOpen = true" class="relative text-text-muted hover:text-text-base p-2 rounded-full hover:bg-bg-muted">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                    <span x-show="cartItems.length > 0" class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center" x-text="cartItems.length"></span>
+                </button>
+                 <button @click="mobileMenuOpen = !mobileMenuOpen" class="md:hidden text-text-muted hover:text-text-base p-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" /></svg>
+                </button>
+            </div>
+        </nav>
+        <div x-show="mobileMenuOpen" @click.away="mobileMenuOpen = false" class="md:hidden bg-bg-base" x-transition>
+            <a href="#" @click.prevent="currentView = 'home'; mobileMenuOpen = false" class="block py-2 px-4 text-sm text-text-muted hover:bg-bg-muted">Home</a>
+            <a href="#" @click.prevent="currentView = 'stock'; mobileMenuOpen = false" class="block py-2 px-4 text-sm text-text-muted hover:bg-bg-muted">Shop</a>
+            <a href="#" @click.prevent="currentView = 'about'; mobileMenuOpen = false" class="block py-2 px-4 text-sm text-text-muted hover:bg-bg-muted">About Us</a>
+            <a href="#contact" @click="mobileMenuOpen = false" class="block py-2 px-4 text-sm text-text-muted hover:bg-bg-muted">Contact</a>
+        </div>
+    </header>
+
+    <main>
+        <!-- HOME VIEW -->
+        <div x-show="currentView === 'home'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100">
+            <!-- Hero Section -->
+            <section class="bg-bg-muted">
+                 <div class="container mx-auto px-6 py-16 md:py-24">
+                    <div class="grid md:grid-cols-2 gap-12 items-center">
+                        <div class="text-center md:text-left">
+                            <h1 class="text-4xl md:text-5xl font-bold text-text-base leading-tight mb-4">Welcome to JunkShop</h1>
+                            <p class="text-lg text-text-muted mb-8">Discover timeless antiques and unique collectibles at fantastic prices.</p>
+                            <a href="#" @click.prevent="currentView = 'stock'" class="inline-block bg-primary hover:bg-primary-hover text-white font-semibold py-3 px-8 rounded-lg shadow-lg uppercase tracking-wider">Shop Now</a>
+                        </div>
+                        <div class="relative w-full h-96 rounded-lg shadow-2xl overflow-hidden">
+                            <!-- Fallback Image -->
+                            <div x-show="heroSlideshowProducts.length === 0" class="w-full h-full">
+                                <img src="https://images.unsplash.com/photo-1594709425255-a5b50a0026c2?q=80&w=2070&auto=format&fit=crop" alt="Default Hero Image" class="w-full h-full object-cover">
+                            </div>
+                            
+                            <!-- Slideshow Images -->
+                            <template x-for="(product, index) in heroSlideshowProducts" :key="product.id">
+                                <div x-show="activeHeroSlide === index" class="absolute w-full h-full" x-transition:enter="transition-opacity ease-in-out duration-1000" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition-opacity ease-in-out duration-1000" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
+                                    <img :src="product.images[0]" :alt="product.name" class="w-full h-full object-cover">
+                                    <div class="absolute inset-0 bg-black bg-opacity-40 flex flex-col items-center justify-center text-center p-4">
+                                        <h3 class="text-white text-2xl font-bold" x-text="product.name"></h3>
+                                        <button @click="openProductModal(product)" class="mt-4 bg-primary hover:bg-primary-hover text-white text-sm font-semibold py-2 px-4 rounded-lg">View Details</button>
+                                    </div>
+                                </div>
+                            </template>
+                            
+                            <!-- Navigation Dots -->
+                            <div class="absolute bottom-4 left-0 right-0 flex justify-center space-x-2" x-show="heroSlideshowProducts.length > 1">
+                                <template x-for="(product, index) in heroSlideshowProducts" :key="product.id">
+                                    <button @click="activeHeroSlide = index" class="w-3 h-3 rounded-full" :class="activeHeroSlide === index ? 'bg-white' : 'bg-white/50'"></button>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            <!-- Featured Section on Homepage -->
+             <section class="py-20 bg-bg-base">
+                <div class="container mx-auto px-6">
+                    <h2 class="text-3xl font-bold text-center text-text-base mb-12">Featured</h2>
+                    <div x-show="products.length === 0 && !initError" class="text-center text-text-muted">Loading products...</div>
+                    <p x-show="featuredProducts.length === 0 && products.length > 0" class="text-center text-text-muted">No featured items at the moment. Check back soon!</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+                        <template x-for="product in featuredProducts" :key="product.id">
+                           <div class="bg-bg-base rounded-lg shadow-md overflow-hidden transform hover:-translate-y-2 transition-transform duration-300 border border-border-base">
+                                <div class="w-full h-56 bg-bg-muted flex items-center justify-center">
+                                    <img :src="product.images && product.images.length > 0 ? product.images[0] : 'https://placehold.co/600x400/f5f5f5/333?text=No+Image'" :alt="product.name" class="max-w-full max-h-full object-contain">
+                                </div>
+                                <div class="p-6">
+                                    <h3 class="text-xl font-semibold text-text-base mb-2 truncate" x-text="product.name"></h3>
+                                    <p class="text-text-base font-bold mb-1" x-text="`£${parseFloat(product.price).toFixed(2)}`"></p>
+                                    <p class="text-text-muted text-sm" x-text="product.postage === 'POA' ? 'Postage: Price on Application' : `+ £${parseFloat(product.postage || 0).toFixed(2)} P&P`"></p>
+                                    <div class="flex justify-between items-center mt-4">
+                                        <button @click="addToCart(product)" class="bg-primary hover:bg-primary-hover text-white text-sm font-semibold py-2 px-4 rounded-lg">Add to Cart</button>
+                                        <button @click="openProductModal(product)" class="text-sm text-text-muted hover:text-text-base font-semibold">View Details</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                     <div class="text-center mt-12">
+                        <a href="#" @click.prevent="currentView = 'stock'" class="inline-block bg-primary hover:bg-primary-hover text-white font-semibold py-3 px-8 rounded-lg shadow-lg uppercase tracking-wider">Go to Shop</a>
+                    </div>
+                </div>
+            </section>
+            <!-- About Section on Homepage -->
+            <section class="bg-bg-muted py-20"><div class="container mx-auto px-6 text-center"><h2 class="text-3xl font-bold text-text-base mb-4">About JunkShop</h2><p class="max-w-3xl mx-auto text-text-muted leading-relaxed">JunkShop was born from a lifelong passion for history and the stories that objects tell. We travel far and wide to curate a unique collection of antiques and collectibles, each with its own character and charm. We believe in quality, authenticity, and providing our customers with pieces that will be cherished for generations.</p></div></section>
+        </div>
+        
+        <!-- STOCK VIEW (Now the "Shop" view) -->
+        <div x-show="currentView === 'stock'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100">
+            <section class="py-20 bg-bg-base">
+                <div class="container mx-auto px-6">
+                    <div class="flex flex-col md:flex-row justify-between items-center mb-12">
+                        <h2 class="text-3xl font-bold text-text-base mb-4 md:mb-0">Shop</h2>
+                        <div class="w-full md:w-auto">
+                            <label for="category-filter" class="sr-only">Filter by category</label>
+                            <select id="category-filter" x-model="selectedCategory" class="w-full md:w-64 p-2 border border-border-base rounded-lg bg-bg-base text-text-base">
+                                <option value="All">All Categories</option>
+                                <template x-for="category in categories" :key="category">
+                                    <option :value="category" x-text="category"></option>
+                                </template>
+                            </select>
+                        </div>
+                    </div>
+                    <div x-show="products.length === 0 && !initError" class="text-center text-text-muted">Loading products...</div>
+                     <p x-show="filteredProducts.length === 0 && products.length > 0" class="text-center text-text-muted">No products found in this category.</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+                        <template x-for="product in filteredProducts" :key="product.id">
+                            <div class="bg-bg-base rounded-lg shadow-md overflow-hidden transform hover:-translate-y-2 transition-transform duration-300 border border-border-base">
+                                <div class="w-full h-56 bg-bg-muted flex items-center justify-center">
+                                    <img :src="product.images && product.images.length > 0 ? product.images[0] : 'https://placehold.co/600x400/f5f5f5/333?text=No+Image'" :alt="product.name" class="max-w-full max-h-full object-contain">
+                                </div>
+                                <div class="p-6">
+                                    <h3 class="text-xl font-semibold text-text-base mb-2 truncate" x-text="product.name"></h3>
+                                    <p class="text-text-base font-bold mb-1" x-text="`£${parseFloat(product.price).toFixed(2)}`"></p>
+                                    <p class="text-text-muted text-sm" x-text="product.postage === 'POA' ? 'Postage: Price on Application' : (product.postage > 0 ? `+ £${parseFloat(product.postage).toFixed(2)} P&P` : '')"></p>
+                                    <div class="flex justify-between items-center mt-4">
+                                        <button @click="addToCart(product)" class="bg-primary hover:bg-primary-hover text-white text-sm font-semibold py-2 px-4 rounded-lg">Add to Cart</button>
+                                        <button @click="openProductModal(product)" class="text-sm text-text-muted hover:text-text-base font-semibold">View Details</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- ABOUT VIEW -->
+        <div x-show="currentView === 'about'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100">
+            <section class="bg-bg-muted py-20"><div class="container mx-auto px-6 text-center py-16"><h2 class="text-3xl font-bold text-text-base mb-4">About JunkShop</h2><p class="max-w-3xl mx-auto text-text-muted leading-relaxed">JunkShop was born from a lifelong passion for history and the stories that objects tell. We travel far and wide to curate a unique collection of antiques and collectibles, each with its own character and charm. We believe in quality, authenticity, and providing our customers with pieces that will be cherished for generations.</p></div></section>
+        </div>
+
+        <!-- CHECKOUT VIEW -->
+        <div x-show="currentView === 'checkout'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100">
+            <section class="py-20 bg-bg-base">
+                <div class="container mx-auto px-6 max-w-4xl">
+                    <h2 class="text-3xl font-bold text-text-base mb-8">Checkout</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-12">
+                        <div>
+                            <div class="mb-6">
+                                <h3 class="text-xl font-semibold text-text-base mb-4">Delivery Option</h3>
+                                <div class="space-y-2">
+                                    <label class="flex items-center p-4 border rounded-lg cursor-pointer" :class="deliveryMethod === 'delivery' ? 'border-primary' : 'border-border-base'">
+                                        <input type="radio" x-model="deliveryMethod" value="delivery" class="h-4 w-4 text-primary focus:ring-primary">
+                                        <span class="ml-3 text-text-base">Delivery</span>
+                                    </label>
+                                    <label class="flex items-center p-4 border rounded-lg cursor-pointer" :class="deliveryMethod === 'collection' ? 'border-primary' : 'border-border-base'">
+                                        <input type="radio" x-model="deliveryMethod" value="collection" class="h-4 w-4 text-primary focus:ring-primary">
+                                        <span class="ml-3 text-text-base">Collection (Free)</span>
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <h3 class="text-xl font-semibold text-text-base mb-4">Your Details</h3>
+                            <form id="checkout-form" @submit.prevent="handleCheckout">
+                                <div class="space-y-4">
+                                    <div>
+                                        <label for="name" class="block text-sm font-medium text-text-muted">Full Name</label>
+                                        <input type="text" id="name" x-model="checkoutForm.name" required class="mt-1 block w-full border border-border-base rounded-md shadow-sm p-2 bg-bg-base text-text-base">
+                                    </div>
+                                    <div>
+                                        <label for="email" class="block text-sm font-medium text-text-muted">Email Address</label>
+                                        <input type="email" id="email" x-model="checkoutForm.email" required class="mt-1 block w-full border border-border-base rounded-md shadow-sm p-2 bg-bg-base text-text-base">
+                                    </div>
+                                    <div x-show="deliveryMethod === 'delivery'" x-transition class="space-y-4">
+                                        <div>
+                                            <label for="address" class="block text-sm font-medium text-text-muted">Street Address</label>
+                                            <input type="text" id="address" x-model="checkoutForm.address" :required="deliveryMethod === 'delivery'" class="mt-1 block w-full border border-border-base rounded-md shadow-sm p-2 bg-bg-base text-text-base">
+                                        </div>
+                                        <div>
+                                            <label for="city" class="block text-sm font-medium text-text-muted">Town / City</label>
+                                            <input type="text" id="city" x-model="checkoutForm.city" :required="deliveryMethod === 'delivery'" class="mt-1 block w-full border border-border-base rounded-md shadow-sm p-2 bg-bg-base text-text-base">
+                                        </div>
+                                        <div>
+                                            <label for="postcode" class="block text-sm font-medium text-text-muted">Postcode</label>
+                                            <input type="text" id="postcode" x-model="checkoutForm.postcode" :required="deliveryMethod === 'delivery'" class="mt-1 block w-full border border-border-base rounded-md shadow-sm p-2 bg-bg-base text-text-base">
+                                        </div>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold text-text-base mb-4">Order Summary</h3>
+                            <div class="border border-border-base rounded-lg p-4 space-y-2">
+                                <template x-for="item in cartItems" :key="item.id">
+                                    <div class="flex justify-between text-sm">
+                                        <span class="text-text-muted" x-text="`${item.name} x${item.quantity}`"></span>
+                                        <span class="text-text-base" x-text="`£${(item.price * item.quantity).toFixed(2)}`"></span>
+                                    </div>
+                                </template>
+                                <div class="border-t border-border-base pt-2">
+                                    <div class="flex justify-between text-sm">
+                                        <span class="text-text-muted">Subtotal</span>
+                                        <span class="text-text-base" x-text="`£${itemsSubtotal.toFixed(2)}`"></span>
+                                    </div>
+                                    <div class="flex justify-between text-sm">
+                                        <span class="text-text-muted">Postage</span>
+                                        <span class="text-text-base" x-text="cartContainsPOA ? 'To be calculated' : `£${postageTotal.toFixed(2)}`"></span>
+                                    </div>
+                                    <div class="flex justify-between font-bold text-lg mt-2">
+                                        <span class="text-text-base">Total</span>
+                                        <span class="text-text-base" x-text="cartContainsPOA ? `£${itemsSubtotal.toFixed(2)} + Shipping` : `£${cartTotal.toFixed(2)}`"></span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-6">
+                                <button type="submit" form="checkout-form" class="w-full bg-primary hover:bg-primary-hover text-white font-semibold py-3 px-4 rounded-lg">Pay with Card</button>
+                                <button @click="currentView = 'stock'" class="w-full text-center mt-2 text-sm text-text-muted hover:text-text-base">Back to Shop</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- ORDER SUCCESS VIEW -->
+        <div x-show="currentView === 'orderSuccess'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100">
+             <section class="py-20 bg-bg-base">
+                <div class="container mx-auto px-6 max-w-2xl text-center">
+                    <h2 class="text-3xl font-bold text-text-base mb-4">Thank You!</h2>
+                    <p class="text-lg text-text-muted mb-8">Your order has been placed successfully. We'll be in touch shortly with confirmation and shipping details.</p>
+                    <a href="#" @click.prevent="currentView = 'home'" class="inline-block bg-primary hover:bg-primary-hover text-white font-semibold py-3 px-8 rounded-lg shadow-lg uppercase tracking-wider">Back to Home</a>
+                </div>
+             </section>
+        </div>
+
+
+        <!-- TERMS AND CONDITIONS VIEW -->
+        <div x-show="currentView === 'termsAndConditions'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100">
+            <section class="py-20 bg-bg-base">
+                <div class="container mx-auto px-6 max-w-4xl">
+                    <h2 class="text-3xl font-bold text-text-base mb-8">Terms and Conditions</h2>
+                    <div class="prose max-w-none text-text-base">
+                        <p><strong>Last Updated: October 10, 2025</strong></p>
+                        <p>These Terms and Conditions ("Terms") govern your use of the JunkShop website (the "Site") and purchases from us. By accessing the Site or ordering, you agree to these Terms. If you do not agree, do not use the Site. We specialize in antiques and vintage items.</p>
+                        <h3>1. Use of the Site</h3>
+                        <ul>
+                            <li>The Site is for personal, non-commercial use.</li>
+                            <li>You must be 18 or older to purchase.</li>
+                            <li>Do not misuse the Site (e.g., no hacking, unauthorized scraping, or harmful content). We may suspend access for violations.</li>
+                        </ul>
+                        <h3>2. Products and Descriptions</h3>
+                        <ul>
+                            <li>Items are antiques (over 100 years old) or vintage (typically from the 20th century, e.g., 1920s–1990s), unless otherwise stated. Descriptions reflect our assessment; items may show age-related wear (e.g., marks, patina).</li>
+                            <li>We strive for accuracy, but colors may vary due to screens. Review images carefully.</li>
+                            <li>Availability: Items are subject to stock. We may refuse or cancel orders.</li>
+                        </ul>
+                        <h3>3. Pricing and Payment</h3>
+                        <ul>
+                            <li>Prices are in GBP.</li>
+                            <li>Payment via SumUps secure payment gateway or CASH. Full payment due at checkout.</li>
+                            <li>We are not liable for payment processing errors; contact your provider.</li>
+                        </ul>
+                        <h3>4. Orders and Contracts</h3>
+                        <ul>
+                            <li>An order forms a binding contract upon our confirmation (via email).</li>
+                            <li>We may refuse orders (e.g., stock issues, suspected fraud).</li>
+                            <li>Risk of loss passes to you upon dispatch.</li>
+                        </ul>
+                        <h3>5. Shipping and Delivery</h3>
+                        <ul>
+                            <li>UK delivery: 3-7 business days via [e.g., Royal Mail, DPD]. Costs shown at checkout.</li>
+                            <li>International: Available; you cover duties/taxes.</li>
+                            <li>We are not liable for carrier delays or losses. Track orders via provided details.</li>
+                            <li>Large items: Arrange collection or specialist shipping.</li>
+                        </ul>
+                        <h3>6. Returns and Refunds</h3>
+                        <ul>
+                            <li><strong>Cooling-Off Period:</strong> For eligible items, you have 14 days from receipt to return for any reason (Consumer Contracts Regulations 2013). Return in original condition, at your cost (unless faulty).</li>
+                            <li><strong>Non-Returnable Items:</strong> No returns are accepted for items sold for restoration, spares, repair, job lots, or items explicitly stating that servicing is likely required. These items are sold "as is" and clearly marked in their descriptions.</li>
+                            <li><strong>Faulty Items:</strong> 30 days for defects not due to wear or described condition. We cover return costs; refund or replacement offered.</li>
+                            <li><strong>Antiques and Vintage-Specific:</strong> No returns for “change of mind” if the item matches its description. Provide photos and reasons for any return request.</li>
+                            <li>Refunds processed within 14 days of receipt. Non-returnable: Personalized items.</li>
+                            <li>Contact junkshopdumfries@gmail.com for return instructions.</li>
+                        </ul>
+                        <h3>7. Warranties and Liability</h3>
+                        <ul>
+                            <li>Goods are of satisfactory quality, fit for purpose, and as described (Consumer Rights Act 2015).</li>
+                            <li>Antiques and vintage items, including those for restoration, spares, repair, job lots, or requiring servicing, are sold “as is” with no implied warranties beyond description. We are not liable for wear or suitability for specific uses.</li>
+                            <li>Our liability is limited to the purchase price. We are not liable for indirect losses (e.g., data loss).</li>
+                            <li>Force majeure: We are not liable for delays due to events beyond control (e.g., strikes, pandemics).</li>
+                        </ul>
+                        <h3>8. Intellectual Property</h3>
+                        <ul>
+                            <li>Site content (images, text) is owned by JunkShop. Use for personal reference only; no reproduction without permission.</li>
+                        </ul>
+                        <h3>9. Governing Law</h3>
+                        <ul>
+                            <li>These Terms are governed by Scots law. Disputes will be resolved in Scottish courts.</li>
+                        </ul>
+                        <h3>10. Changes to Terms</h3>
+                        <ul>
+                            <li>We may update these Terms. Continued use constitutes acceptance.</li>
+                        </ul>
+                        <h3>11. Contact Us</h3>
+                        <p>Email: junkshopdumfries@gmail.com<br>Address: Unit 4 Huntingdon Road Ind. Est., Huntingdon Road, Dumfries. DG1 1NF</p>
+                    </div>
+                    <div class="text-center mt-12">
+                        <a href="#" @click.prevent="currentView = 'home'" class="inline-block bg-primary hover:bg-primary-hover text-white font-semibold py-3 px-8 rounded-lg shadow-lg uppercase tracking-wider">Back to Home</a>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- PRIVACY POLICY VIEW -->
+        <div x-show="currentView === 'privacyPolicy'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100">
+            <section class="py-20 bg-bg-base">
+                <div class="container mx-auto px-6 max-w-4xl">
+                    <h2 class="text-3xl font-bold text-text-base mb-8">Privacy Policy</h2>
+                    <div class="prose max-w-none text-text-base">
+                        <p><strong>Last Updated: October 10, 2025</strong></p>
+                        <p>At JunkShop, we are committed to protecting the privacy of our website visitors and customers. This Privacy Policy outlines how we collect, use, and safeguard your personal data in compliance with the UK General Data Protection Regulation (UK GDPR) and the Data Protection Act 2018. JunkShop, based in Scotland, acts as the data controller for the personal data we process.</p>
+                        
+                        <h3>1. Information We Collect</h3>
+                        <p>We may collect:</p>
+                        <ul>
+                            <li><strong>Identity and Contact Data:</strong> Name, email address, postal address, phone number (provided during account creation, purchases, or inquiries).</li>
+                            <li><strong>Transaction Data:</strong> Purchase details, including payment information (processed securely via third-party providers like Stripe or PayPal).</li>
+                            <li><strong>Technical Data:</strong> IP address, browser type, device details, and usage data (e.g., pages visited) collected via cookies and analytics tools.</li>
+                            <li><strong>Marketing and Communications Data:</strong> Preferences for receiving newsletters or promotions.</li>
+                        </ul>
+                        <p>We do not collect sensitive personal data (e.g., health or detailed financial information beyond transaction needs).</p>
+
+                        <h3>2. How We Collect Your Data</h3>
+                        <p>We collect data:</p>
+                        <ul>
+                            <li><strong>Directly from You:</strong> When you register, order, subscribe to our newsletter, or contact us via the website or email.</li>
+                            <li><strong>Automatically:</strong> Through cookies and similar technologies when browsing our site. See our Cookie Policy for details.</li>
+                            <li><strong>From Third Parties:</strong> From payment processors or shipping providers (e.g., Royal Mail, DPD) for order processing.</li>
+                        </ul>
+
+                        <h3>3. How We Use Your Data</h3>
+                        <p>We use your data to:</p>
+                        <ul>
+                            <li>Process and deliver orders, including payments and shipping.</li>
+                            <li>Provide customer support and respond to inquiries.</li>
+                            <li>Improve our website and services (e.g., analyzing usage data).</li>
+                            <li>Send marketing communications (e.g., new antique arrivals), only with your consent or if you’re an existing customer (under legitimate interest).</li>
+                            <li>Comply with legal obligations, such as tax records or fraud prevention.</li>
+                        </ul>
+                        <p>Legal bases under UK GDPR: Consent (marketing), Contract (order fulfillment), Legitimate interests (site improvements, security), Legal compliance (record-keeping).</p>
+
+                        <h3>4. Sharing Your Data</h3>
+                        <p>We may share data with:</p>
+                        <ul>
+                            <li><strong>Service Providers:</strong> Trusted third parties for payment processing, shipping, or analytics (e.g., Google Analytics), bound by data protection agreements.</li>
+                            <li><strong>Professional Advisers:</strong> Accountants or legal advisors for business purposes.</li>
+                            <li><strong>Regulatory Bodies:</strong> If required by law (e.g., HMRC for tax purposes).</li>
+                        </ul>
+                        <p>We do not sell your data. International transfers (e.g., to non-UK providers) are protected by standard contractual clauses.</p>
+
+                        <h3>5. Data Security</h3>
+                        <p>We use SSL encryption, secure payment gateways, and other measures to protect your data. No system is fully secure, so we cannot guarantee absolute protection.</p>
+                        
+                        <h3>6. Data Retention</h3>
+                        <p>We retain data only as long as necessary:</p>
+                        <ul>
+                            <li>Order data: 6 years for tax purposes.</li>
+                            <li>Marketing data: Until you unsubscribe.</li>
+                            <li>Technical data: 26 months for analytics.</li>
+                        </ul>
+                        <p>You can request deletion, subject to legal retention requirements.</p>
+
+                        <h3>7. Your Rights</h3>
+                        <p>Under UK GDPR, you have the right to: Access your data, Rectify inaccuracies, Erase data (right to be forgotten), Restrict processing, Object to processing (e.g., marketing), Data portability, Withdraw consent.</p>
+                        <p>Contact us at junkshopdumfries@gmail.com to exercise these rights. We respond within one month. You can also contact the Information Commissioner’s Office (ICO) at www.ico.org.uk.</p>
+                        
+                        <h3>8. Cookies</h3>
+                        <p>We use cookies for site functionality and analytics. Manage preferences via browser settings. See our Cookie Policy for details.</p>
+
+                        <h3>9. Changes to This Policy</h3>
+                        <p>Updates will be posted here, with the revised date at the top.</p>
+
+                        <h3>10. Contact Us</h3>
+                        <p>Email: junkshopdumfries@gmail.com</p>
+                        <p>Address: Unit 4 Huntingdon Road Ind. Est., Huntingdon Road, Dumfries. DG1 1NF</p>
+
+                    </div>
+                    <div class="text-center mt-12">
+                        <a href="#" @click.prevent="currentView = 'home'" class="inline-block bg-primary hover:bg-primary-hover text-white font-semibold py-3 px-8 rounded-lg shadow-lg uppercase tracking-wider">Back to Home</a>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- COOKIE POLICY VIEW -->
+        <div x-show="currentView === 'cookiePolicy'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100">
+            <section class="py-20 bg-bg-base">
+                <div class="container mx-auto px-6 max-w-4xl">
+                    <h2 class="text-3xl font-bold text-text-base mb-8">Cookie Policy</h2>
+                    <div class="prose max-w-none text-text-base">
+                        <p>This is the Cookie Policy for JunkShop, accessible from this website.</p>
+                        <h3>What Are Cookies</h3>
+                        <p>As is common practice with almost all professional websites, this site uses cookies and similar technologies like local storage, which are tiny files that are downloaded to your computer to improve your experience. This page describes what information they gather, how we use it and why we sometimes need to store these files. We will also share how you can prevent these files from being stored; however, this may downgrade or 'break' certain elements of the site's functionality.</p>
+                        
+                        <h3>How We Use Cookies and Local Storage</h3>
+                        <p>We use local storage for the reasons detailed below. Unfortunately, in most cases, there are no industry standard options for disabling cookies without completely disabling the functionality and features they add to this site. It is recommended that you leave on all cookies if you are not sure whether you need them or not in case they are used to provide a service that you use.</p>
+
+                        <h3>The Cookies & Local Storage We Set</h3>
+                        <ul>
+                            <li>
+                                <p><strong>Functionality Storage:</strong> To provide you with a great experience on this site, we provide the functionality to set your preferences for how this site runs when you use it. To remember your preferences, we need to set a value in your browser's local storage so that this information can be called whenever you interact with a page. We currently use this for your selected color theme. This is only set if you consent to cookies.</p>
+                            </li>
+                        </ul>
+                        <h3>Third-Party Cookies</h3>
+                        <p>This site does not use third-party cookies for advertising or analytics.</p>
+
+                        <h3>Disabling Cookies</h3>
+                        <p>You can prevent the setting of cookies by adjusting the settings on your browser (see your browser Help for how to do this). Be aware that disabling cookies will affect the functionality of this and many other websites that you visit. Disabling cookies will usually result in also disabling certain functionality and features of this site. Therefore it is recommended that you do not disable cookies.</p>
+                        
+                        <h3>More Information</h3>
+                        <p>Hopefully, that has clarified things for you. If you are still looking for more information, then you can contact us through our email: junkshopdumfries@gmail.com</p>
+                    </div>
+                     <div class="text-center mt-12">
+                        <a href="#" @click.prevent="currentView = 'home'" class="inline-block bg-primary hover:bg-primary-hover text-white font-semibold py-3 px-8 rounded-lg shadow-lg uppercase tracking-wider">Back to Home</a>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+        
+    <footer id="contact" class="bg-[#111827] text-gray-300">
+        <div class="container mx-auto px-6 py-12">
+            <div class="grid md:grid-cols-2 gap-8">
+                <div>
+                    <h3 class="text-lg font-semibold text-white mb-4">LEGAL</h3>
+                    <ul>
+                        <li class="mb-2"><a href="#" @click.prevent="currentView = 'privacyPolicy'" class="hover:underline">Privacy Policy</a></li>
+                        <li class="mb-2"><a href="#" @click.prevent="currentView = 'termsAndConditions'" class="hover:underline">Terms and conditions</a></li>
+                        <li><a href="#" @click.prevent="currentView = 'cookiePolicy'" class="hover:underline">Cookies Policy</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold text-white mb-4">CONTACT</h3>
+                    <ul>
+                        <li class="mb-2">junkshopdumfries@gmail.com</li>
+                        <li>
+                            JunkShop<br>
+                            Unit 4 Huntingdon Road Ind. Est.<br>
+                            Huntingdon Road<br>
+                            Dumfries. DG1 1NF
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            <div class="mt-12 border-t border-gray-700 pt-8 text-center text-gray-400">
+                <p>&copy; 2025 JunkShop. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+    
+    <!-- Cookie Consent Banner -->
+    <div x-show="!cookieConsent" class="fixed bottom-0 inset-x-0 pb-2 sm:pb-5 z-50" x-transition>
+        <div class="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8">
+            <div class="p-4 rounded-lg bg-bg-muted shadow-lg sm:p-6">
+                <div class="flex items-center justify-between flex-wrap">
+                    <div class="w-0 flex-1 flex items-center">
+                        <p class="ml-3 font-medium text-text-base">
+                            <span class="md:hidden">We use cookies to improve your experience.</span>
+                            <span class="hidden md:inline">This website uses cookies and local storage to enhance the user experience.</span>
+                        </p>
+                    </div>
+                    <div class="order-3 mt-2 flex-shrink-0 w-full sm:order-2 sm:mt-0 sm:w-auto">
+                        <button @click="acceptCookies" class="flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-hover">Accept</button>
+                    </div>
+                    <div class="order-2 flex-shrink-0 sm:order-3 sm:ml-2">
+                        <button @click="declineCookies" type="button" class="-mr-1 flex p-2 rounded-md hover:bg-bg-base focus:outline-none focus:ring-2 focus:ring-white">
+                            <span class="sr-only">Dismiss</span>
+                            <svg class="h-6 w-6 text-text-base" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="cartOpen" @click.away="cartOpen = false" class="fixed inset-0 bg-black bg-opacity-50 z-50 modal-overlay" x-cloak>
+        <div class="fixed right-0 top-0 h-full w-full max-w-sm bg-bg-base shadow-xl flex flex-col modal-content">
+            <div class="flex justify-between items-center p-6 border-b border-border-base"><h2 class="text-2xl font-bold text-text-base">Your Cart</h2><button @click="cartOpen = false" class="text-text-muted hover:text-text-base">&times;</button></div>
+            <div class="flex-grow p-6 overflow-y-auto">
+                <p x-show="cartItems.length === 0" class="text-center text-text-muted">Your cart is empty.</p>
+                <template x-for="item in cartItems" :key="item.id">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center"><img :src="item.images[0]" :alt="item.name" class="h-16 w-16 object-cover rounded-md mr-4"><div><h3 class="font-semibold text-text-base" x-text="item.name"></h3><p class="text-sm text-text-muted" x-text="`£${parseFloat(item.price).toFixed(2)}`"></p><div class="flex items-center mt-1"><button @click="updateQuantity(item.id, item.quantity - 1)" class="px-2 py-0.5 border border-border-base text-text-base rounded-md">-</button><span class="px-3 text-text-base" x-text="item.quantity"></span><button @click="updateQuantity(item.id, item.quantity + 1)" class="px-2 py-0.5 border border-border-base text-text-base rounded-md">+</button></div></div></div>
+                        <button @click="removeFromCart(item.id)" class="text-red-500 hover:text-red-700 text-xs">Remove</button>
+                    </div>
+                </template>
+            </div>
+            <div class="p-6 border-t border-border-base" x-show="cartItems.length > 0">
+                <div class="space-y-2 mb-4 text-text-base">
+                    <div class="flex justify-between"><span>Subtotal</span><span x-text="`£${itemsSubtotal.toFixed(2)}`"></span></div>
+                    <div class="flex justify-between"><span>Postage</span><span x-text="cartContainsPOA ? 'To be calculated' : `£${postageTotal.toFixed(2)}`"></span></div>
+                    <div class="flex justify-between font-bold text-lg"><span>Total</span><span x-text="cartContainsPOA ? `£${itemsSubtotal.toFixed(2)} + Shipping` : `£${cartTotal.toFixed(2)}`"></span></div>
+                </div>
+                <button x-show="!cartContainsPOA" @click="currentView = 'checkout'; cartOpen = false" class="w-full bg-primary hover:bg-primary-hover text-white font-semibold py-3 px-4 rounded-lg">Proceed to Checkout</button>
+                <div x-show="cartContainsPOA" class="text-center text-sm p-3 bg-bg-muted rounded-lg">
+                    <p class="text-text-muted">Your cart contains items that require a custom shipping quote. Please contact us to finalize your purchase.</p>
+                    <a href="mailto:junkshopdumfries@gmail.com" class="font-bold text-primary">junkshopdumfries@gmail.com</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div x-show="productModalOpen" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 modal-overlay" x-cloak>
+        <div @click.away="productModalOpen = false; zoomActive=false;" class="bg-bg-base rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto modal-content">
+             <template x-if="selectedProduct">
+                <div class="grid md:grid-cols-2">
+                    <div class="p-6"><div class="img-zoom-container relative" @mouseenter="zoomActive = true" @mouseleave="zoomActive = false" @mousemove="handleMouseMove"><img x-ref="mainImage" :src="activeModalImage" :alt="selectedProduct.name" class="w-full h-96 object-cover rounded-lg mb-4 cursor-crosshair"><div x-show="zoomActive" class="img-zoom-lens" :style="zoomLensStyle"></div><div x-show="zoomActive" class="img-zoom-result hidden md:block" :style="zoomResultStyle"></div></div><div class="flex space-x-2 justify-center mt-4 overflow-x-auto"><template x-for="image in selectedProduct.images" :key="image"><button @click="activeModalImage = image"><img :src="image" :alt="selectedProduct.name" class="w-20 h-20 object-cover rounded-md cursor-pointer" :class="{ 'ring-2 ring-offset-2 ring-primary': activeModalImage === image }"></button></template></div></div>
+                    <div class="p-8 flex flex-col justify-center">
+                        <h2 class="text-3xl font-bold mb-2 text-text-base" x-text="selectedProduct.name"></h2>
+                        <p class="text-2xl text-text-base font-semibold mb-2" x-text="`£${parseFloat(selectedProduct.price).toFixed(2)}`"></p>
+                        <p class="text-lg text-text-muted mb-4" x-text="selectedProduct.postage === 'POA' ? 'Postage: Price on Application' : (selectedProduct.postage > 0 ? `+ £${parseFloat(selectedProduct.postage).toFixed(2)} postage` : '')"></p>
+                        <p class="text-text-muted mb-6" x-text="selectedProduct.description"></p>
+                        <button @click="addToCart(selectedProduct); productModalOpen = false;" class="w-full bg-primary hover:bg-primary-hover text-white font-semibold py-3 px-4 rounded-lg">Add to Cart</button>
+                    </div>
+                </div>
+             </template>
+             <button @click="productModalOpen = false; zoomActive=false;" class="absolute top-4 right-4 text-text-muted hover:text-text-base text-2xl z-20">&times;</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, doc, addDoc, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDnxZSN9VgIp2YE1qiZJdH9PYAx2ES_3tc",
+            authDomain: "junkshop-website-gem.firebaseapp.com",
+            projectId: "junkshop-website-gem",
+            storageBucket: "junkshop-website-gem.firebasestorage.app",
+            messagingSenderId: "233182522533",
+            appId: "1:233182522533:web:9bc09e8730ca62e15df14c",
+            measurementId: "G-DL2J14LQP0"
+        };
+        
+        window.firebaseShopServices = {
+            db: null,
+            auth: null,
+            init: function() {
+                try {
+                    const app = initializeApp(firebaseConfig);
+                    this.db = getFirestore(app);
+                    this.auth = getAuth(app);
+                    signInAnonymously(this.auth).then(() => {
+                        document.dispatchEvent(new CustomEvent('firebase-shop-ready'));
+                    }).catch(e => {
+                        console.error("Anonymous sign-in failed:", e);
+                        document.dispatchEvent(new CustomEvent('firebase-error', { detail: e.message }));
+                    });
+                } catch(e) { 
+                    console.error("Firebase Init Error:", e.message);
+                    document.dispatchEvent(new CustomEvent('firebase-error', { detail: e.message }));
+                }
+            },
+            collection, onSnapshot, doc, addDoc, serverTimestamp, writeBatch
+        };
+        window.firebaseShopServices.init();
+    </script>
+    
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('shop', function() {
+                return {
+                    products: [], mobileMenuOpen: false, cartOpen: false, productModalOpen: false,
+                    selectedProduct: null, activeModalImage: null, zoomActive: false, zoomLensStyle: {}, zoomResultStyle: {},
+                    cartItems: [], checkoutMessage: '', currentView: 'home', selectedCategory: 'All',
+                    themes: ['light', 'sepia', 'charcoal', 'slate', 'parchment'],
+                    theme: 'light',
+                    cookieConsent: null,
+                    activeHeroSlide: 0,
+                    slideshowInterval: null,
+                    checkoutForm: { name: '', email: '', address: '', city: '', postcode: '' },
+                    initError: '',
+                    deliveryMethod: 'delivery',
+                    isLoadingPayment: false,
+                    
+                    init() { 
+                        document.addEventListener('firebase-error', (e) => {
+                            if (e.detail.includes('auth/admin-restricted-operation')) {
+                                this.initError = 'Connection failed. Please enable "Anonymous" sign-in provider in your Firebase project\'s Authentication settings.';
+                            } else {
+                                this.initError = `An unexpected error occurred: ${e.detail}`;
+                            }
+                        });
+
+                        if (localStorage.getItem('junkshop-cookie-consent') === 'true') {
+                            this.cookieConsent = true;
+                            const savedTheme = localStorage.getItem('junkshop-theme');
+                             if (savedTheme && this.themes.includes(savedTheme)) {
+                                this.theme = savedTheme;
+                            }
+                        } else {
+                            this.cookieConsent = false;
+                        }
+                        document.addEventListener('firebase-shop-ready', () => this.fetchProducts()); 
+
+                        this.startSlideshow();
+                        this.$watch('currentView', (view) => {
+                            if (view === 'home') {
+                                this.startSlideshow();
+                            } else {
+                                this.stopSlideshow();
+                            }
+                        });
+                    },
+                    startSlideshow() {
+                        this.stopSlideshow();
+                        if (this.heroSlideshowProducts.length > 1) {
+                             this.slideshowInterval = setInterval(() => {
+                                this.activeHeroSlide = (this.activeHeroSlide + 1) % this.heroSlideshowProducts.length;
+                            }, 5000);
+                        }
+                    },
+                    stopSlideshow() {
+                        if (this.slideshowInterval) {
+                            clearInterval(this.slideshowInterval);
+                            this.slideshowInterval = null;
+                        }
+                    },
+                    acceptCookies() {
+                        this.cookieConsent = true;
+                        localStorage.setItem('junkshop-cookie-consent', 'true');
+                        // Save current theme pref when cookies are accepted
+                        localStorage.setItem('junkshop-theme', this.theme);
+                    },
+                    declineCookies() {
+                        this.cookieConsent = true; // Still hide the banner
+                    },
+                    cycleTheme() {
+                        const currentIndex = this.themes.indexOf(this.theme);
+                        const nextIndex = (currentIndex + 1) % this.themes.length;
+                        this.theme = this.themes[nextIndex];
+                        if (this.cookieConsent && localStorage.getItem('junkshop-cookie-consent') === 'true') {
+                            localStorage.setItem('junkshop-theme', this.theme);
+                        }
+                    },
+                    fetchProducts() {
+                        const { db, collection, onSnapshot } = window.firebaseShopServices;
+                        const productsRef = collection(db, "products");
+                        onSnapshot(productsRef, snapshot => { 
+                            this.products = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); 
+                            this.$nextTick(() => this.startSlideshow());
+                        }, error => {
+                            console.error("Firestore read failed:", error);
+                        });
+                    },
+                    get heroSlideshowProducts() {
+                        return this.products.filter(p => p.isHero && (p.status === 'active' || !p.status)).slice(0, 5);
+                    },
+                    get featuredProducts() { return this.products.filter(p => (p.status === 'active' || !p.status) && p.isFeatured); },
+                    get categories() {
+                        const allCategories = this.products.filter(p => p.status !== 'sold').map(p => p.category).filter(Boolean);
+                        return [...new Set(allCategories)].sort();
+                    },
+                    get filteredProducts() {
+                        const activeProducts = this.products.filter(p => p.status !== 'sold');
+                        if (this.selectedCategory === 'All') { return activeProducts; }
+                        return activeProducts.filter(p => p.category === this.selectedCategory);
+                    },
+                    get itemsSubtotal() { return this.cartItems.reduce((total, item) => total + (parseFloat(item.price) * item.quantity), 0); },
+                    get postageTotal() { 
+                        if (this.deliveryMethod === 'collection' || this.cartContainsPOA) return 0;
+                        return this.cartItems.reduce((total, item) => total + (parseFloat(item.postage || 0) * item.quantity), 0); 
+                    },
+                    get cartTotal() { return this.itemsSubtotal + this.postageTotal; },
+                    get cartContainsPOA() { return this.cartItems.some(item => item.postage === 'POA'); },
+                    addToCart(product) {
+                        const existingItem = this.cartItems.find(item => item.id === product.id);
+                        if (existingItem) { existingItem.quantity++; } 
+                        else { this.cartItems.push({ ...product, quantity: 1 }); }
+                    },
+                    removeFromCart(productId) { this.cartItems = this.cartItems.filter(item => item.id !== productId); },
+                    updateQuantity(productId, quantity) {
+                        const item = this.cartItems.find(item => item.id === productId);
+                        if (item) { if (quantity <= 0) { this.removeFromCart(productId); } else { item.quantity = quantity; } }
+                    },
+                    openProductModal(product) {
+                        this.selectedProduct = product; this.activeModalImage = product.images[0]; this.productModalOpen = true;
+                    },
+                    handleCheckout() {
+                        this.isLoadingPayment = true;
+                        setTimeout(() => {
+                            this.placeOrder();
+                            this.isLoadingPayment = false;
+                        }, 2500);
+                    },
+                    async placeOrder() {
+                        if (this.cartItems.length === 0) return;
+                        const { db, collection, doc, addDoc, serverTimestamp, writeBatch } = window.firebaseShopServices;
+                        
+                        const batch = writeBatch(db);
+                        
+                        const orderRef = doc(collection(db, "orders"));
+                        batch.set(orderRef, {
+                            customerDetails: this.checkoutForm,
+                            deliveryMethod: this.deliveryMethod,
+                            paymentMethod: 'Card (SumUp)',
+                            items: this.cartItems.map(item => ({ id: item.id, name: item.name, quantity: item.quantity, price: item.price, postage: item.postage })),
+                            total: this.cartTotal,
+                            createdAt: serverTimestamp(),
+                            status: 'new'
+                        });
+
+                        this.cartItems.forEach(item => {
+                            const productRef = doc(db, "products", item.id);
+                            batch.update(productRef, { status: 'sold' });
+                        });
+                        
+                        await batch.commit();
+
+                        this.cartItems = [];
+                        this.checkoutForm = { name: '', email: '', address: '', city: '', postcode: '' };
+                        this.currentView = 'orderSuccess';
+                    },
+                    handleMouseMove(e) {
+                        if (!this.zoomActive || window.innerWidth < 768) return;
+                        const img = this.$refs.mainImage; const lens = { w: 100, h: 100 }; const result = { w: 400, h: 400 };
+                        const pos = this.getCursorPos(e); let x = pos.x - (lens.w / 2); let y = pos.y - (lens.h / 2);
+                        if (x > img.width - lens.w) { x = img.width - lens.w; } if (x < 0) { x = 0; }
+                        if (y > img.height - lens.h) { y = img.height - lens.h; } if (y < 0) { y = 0; }
+                        this.zoomLensStyle = { left: `${x}px`, top: `${y}px`, width: `${lens.w}px`, height: `${lens.h}px` };
+                        const cx = result.w / lens.w; const cy = result.h / lens.h;
+                        this.zoomResultStyle = { backgroundImage: `url('${img.src}')`, backgroundSize: `${img.width * cx}px ${img.height * cy}px`, backgroundPosition: `-${x * cx}px -${y * cy}px` };
+                    },
+                    getCursorPos(e) {
+                        const a = this.$refs.mainImage.getBoundingClientRect();
+                        let x = e.pageX - a.left - window.scrollX; let y = e.pageY - a.top - window.scrollY;
+                        return { x, y };
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+
+
