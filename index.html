@@ -675,6 +675,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, onSnapshot, doc, addDoc, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyDnxZSN9VgIp2YE1qiZJdH9PYAx2ES_3tc",
@@ -689,11 +690,13 @@
         window.firebaseShopServices = {
             db: null,
             auth: null,
+            functions: null,
             init: function() {
                 try {
                     const app = initializeApp(firebaseConfig);
                     this.db = getFirestore(app);
                     this.auth = getAuth(app);
+                    this.functions = getFunctions(app, 'europe-west2');
                     signInAnonymously(this.auth).then(() => {
                         document.dispatchEvent(new CustomEvent('firebase-shop-ready'));
                     }).catch(e => {
@@ -705,7 +708,7 @@
                     document.dispatchEvent(new CustomEvent('firebase-error', { detail: e.message }));
                 }
             },
-            collection, onSnapshot, doc, addDoc, serverTimestamp, writeBatch
+            collection, onSnapshot, doc, addDoc, serverTimestamp, writeBatch, httpsCallable
         };
         window.firebaseShopServices.init();
     </script>
@@ -830,40 +833,87 @@
                     openProductModal(product) {
                         this.selectedProduct = product; this.activeModalImage = product.images[0]; this.productModalOpen = true;
                     },
-                    handleCheckout() {
+                    async handleCheckout() {
+                        if (this.cartItems.length === 0) {
+                            alert('Your cart is empty');
+                            return;
+                        }
+                        
+                        // Validate form
+                        if (!this.checkoutForm.name || !this.checkoutForm.email) {
+                            alert('Please fill in all required fields');
+                            return;
+                        }
+                        
+                        if (this.deliveryMethod === 'delivery') {
+                            if (!this.checkoutForm.address || !this.checkoutForm.city || !this.checkoutForm.postcode) {
+                                alert('Please fill in your delivery address');
+                                return;
+                            }
+                        }
+                        
                         this.isLoadingPayment = true;
-                        setTimeout(() => {
-                            this.placeOrder();
+                        
+                        try {
+                            // Calculate total in pence (SumUp requires smallest currency unit)
+                            const totalInPence = Math.round(this.cartTotal * 100);
+                            
+                            // Call Cloud Function to create SumUp checkout
+                            const { functions, httpsCallable } = window.firebaseShopServices;
+                            const createCheckout = httpsCallable(functions, 'createSumupCheckout');
+                            
+                            const result = await createCheckout({
+                                amount: totalInPence,
+                                currency: 'GBP',
+                                description: `JunkShop Order - ${this.cartItems.length} item(s)`,
+                                customerEmail: this.checkoutForm.email
+                            });
+                            
+                            // Save order as "pending_payment" (will be updated after payment via webhook)
+                            await this.savePendingOrder(result.data.checkoutId);
+                            
+                            // Redirect to SumUp payment page
+                            window.location.href = `https://api.sumup.com/v0.1/checkouts/${result.data.checkoutId}`;
+                            
+                        } catch (error) {
+                            console.error('Checkout error:', error);
+                            let errorMessage = 'Payment setup failed. Please try again.';
+                            if (error.message) {
+                                errorMessage += ` Error: ${error.message}`;
+                            }
+                            alert(errorMessage);
                             this.isLoadingPayment = false;
-                        }, 2500);
+                        }
                     },
-                    async placeOrder() {
-                        if (this.cartItems.length === 0) return;
-                        const { db, collection, doc, addDoc, serverTimestamp, writeBatch } = window.firebaseShopServices;
+                    async savePendingOrder(checkoutId) {
+                        const { db, collection, doc, addDoc, serverTimestamp } = window.firebaseShopServices;
                         
-                        const batch = writeBatch(db);
-                        
-                        const orderRef = doc(collection(db, "orders"));
-                        batch.set(orderRef, {
+                        await addDoc(collection(db, "orders"), {
                             customerDetails: this.checkoutForm,
                             deliveryMethod: this.deliveryMethod,
                             paymentMethod: 'Card (SumUp)',
-                            items: this.cartItems.map(item => ({ id: item.id, name: item.name, quantity: item.quantity, price: item.price, postage: item.postage })),
+                            sumupCheckoutId: checkoutId,
+                            items: this.cartItems.map(item => ({ 
+                                id: item.id, 
+                                name: item.name, 
+                                quantity: item.quantity, 
+                                price: item.price, 
+                                postage: item.postage 
+                            })),
                             total: this.cartTotal,
                             createdAt: serverTimestamp(),
-                            status: 'new'
-                        });
-
-                        this.cartItems.forEach(item => {
-                            const productRef = doc(db, "products", item.id);
-                            batch.update(productRef, { status: 'sold' });
+                            status: 'pending_payment'
                         });
                         
-                        await batch.commit();
-
+                        // Store order info in sessionStorage for return page
+                        sessionStorage.setItem('pendingOrder', JSON.stringify({
+                            checkoutId: checkoutId,
+                            items: this.cartItems.length,
+                            total: this.cartTotal
+                        }));
+                        
+                        // Clear cart (will be restored if payment fails)
                         this.cartItems = [];
-                        this.checkoutForm = { name: '', email: '', address: '', city: '', postcode: '' };
-                        this.currentView = 'orderSuccess';
                     },
                     handleMouseMove(e) {
                         if (!this.zoomActive || window.innerWidth < 768) return;
