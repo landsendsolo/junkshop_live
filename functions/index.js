@@ -5,10 +5,16 @@ const fetch = require("node-fetch");
 // Initialize Firebase Admin SDK
 admin.initializeApp();
 
-// IMPORTANT: Set your SumUp secret key in your Firebase project's environment variables.
+// IMPORTANT: Set your SumUp API key in your Firebase project's environment variables.
 // Run this command in your terminal (see deployment guide):
-// firebase functions:config:set sumup.secret_key="YOUR_SUMUP_SECRET_KEY"
-const SUMUP_SECRET_KEY = functions.config().sumup?.secret_key || process.env.SUMUP_SECRET_KEY;
+// firebase functions:config:set sumup.api_key="YOUR_SUMUP_API_KEY"
+// OR for OAuth: firebase functions:config:set sumup.access_token="YOUR_ACCESS_TOKEN"
+const SUMUP_API_KEY = functions.config().sumup?.api_key || process.env.SUMUP_API_KEY;
+const SUMUP_ACCESS_TOKEN = functions.config().sumup?.access_token || process.env.SUMUP_ACCESS_TOKEN;
+const SUMUP_AUTH = SUMUP_ACCESS_TOKEN || SUMUP_API_KEY;
+
+// Site URL for redirects
+const SITE_URL = "https://junkshop-website-gem.web.app";
 
 // Specify the region for the function
 exports.createSumupCheckout = functions.region('europe-west2').https.onCall(async (data, context) => {
@@ -37,46 +43,101 @@ exports.createSumupCheckout = functions.region('europe-west2').https.onCall(asyn
     );
   }
 
-  if (!SUMUP_SECRET_KEY) {
-    console.error("SumUp secret key not configured");
+  if (!SUMUP_AUTH) {
+    console.error("SumUp authentication not configured");
     throw new functions.https.HttpsError(
       "failed-precondition",
       "Payment system not configured. Please contact support."
     );
   }
 
-  const checkoutData = {
-    checkout_reference: `JUNKSHOP-${Date.now()}`,
-    amount: amount,
-    currency: currency,
-    description: description,
-    pay_to_email: "junkshopdumfries@gmail.com", // Your SumUp merchant email
-    customer_email: customerEmail,
-    return_url: "https://junkshop-website-gem.web.app", // Firebase hosting URL
-  };
-
   try {
+    // STEP 1: Get merchant code from SumUp API
+    console.log("Fetching merchant profile...");
+    const merchantResponse = await fetch("https://api.sumup.com/v0.1/me", {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${SUMUP_AUTH}`,
+      },
+    });
+
+    if (!merchantResponse.ok) {
+      const errorBody = await merchantResponse.json().catch(() => ({}));
+      console.error("SumUp merchant API Error:", errorBody);
+      throw new functions.https.HttpsError(
+        "internal",
+        `Failed to retrieve merchant information: ${errorBody.message || 'Unknown error'}`
+      );
+    }
+
+    const merchantData = await merchantResponse.json();
+    const merchantCode = merchantData.merchant_profile?.merchant_code;
+
+    if (!merchantCode) {
+      console.error("Merchant code not found in response:", merchantData);
+      throw new functions.https.HttpsError(
+        "internal",
+        "Merchant code not available. Please check SumUp account configuration."
+      );
+    }
+
+    console.log("Merchant code:", merchantCode);
+
+    // STEP 2: Create checkout with hosted checkout enabled
+    const checkoutData = {
+      checkout_reference: `JUNKSHOP-${Date.now()}`,
+      amount: amount,
+      currency: currency,
+      description: description,
+      merchant_code: merchantCode,
+      pay_to_email: "junkshopdumfries@gmail.com",
+      redirect_url: `${SITE_URL}/payment-success.html`,
+      hosted_checkout: {
+        enabled: true
+      }
+    };
+
+    console.log("Creating SumUp checkout with data:", JSON.stringify(checkoutData, null, 2));
+
     const response = await fetch("https://api.sumup.com/v0.1/checkouts", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${SUMUP_SECRET_KEY}`,
+        Authorization: `Bearer ${SUMUP_AUTH}`,
       },
       body: JSON.stringify(checkoutData),
     });
 
     if (!response.ok) {
-      const errorBody = await response.json();
-      console.error("SumUp API Error:", errorBody);
+      const errorBody = await response.json().catch(() => ({}));
+      console.error("SumUp checkout API Error:", errorBody);
       throw new functions.https.HttpsError(
         "internal",
-        `SumUp API error: ${errorBody.message || 'Unknown error'}`
+        `SumUp API error: ${errorBody.message || response.statusText || 'Unknown error'}`
       );
     }
 
     const checkoutResponse = await response.json();
     console.log("SumUp checkout created:", checkoutResponse.id);
-    return { checkoutId: checkoutResponse.id };
+    
+    // Extract hosted checkout URL
+    const hostedCheckoutUrl = checkoutResponse.hosted_checkout_url;
+    
+    if (!hostedCheckoutUrl) {
+      console.error("Hosted checkout URL not found in response:", checkoutResponse);
+      throw new functions.https.HttpsError(
+        "internal",
+        "Payment page URL not received. Please contact support."
+      );
+    }
+
+    console.log("Hosted checkout URL:", hostedCheckoutUrl);
+
+    return { 
+      checkoutId: checkoutResponse.id,
+      hostedCheckoutUrl: hostedCheckoutUrl,
+      checkoutReference: checkoutResponse.checkout_reference
+    };
   } catch (error) {
     console.error("Error creating SumUp checkout:", error);
     
@@ -87,7 +148,7 @@ exports.createSumupCheckout = functions.region('europe-west2').https.onCall(asyn
     
     throw new functions.https.HttpsError(
       "internal",
-      "An unexpected error occurred while creating the checkout."
+      "An unexpected error occurred while creating the checkout. Please try again."
     );
   }
 });

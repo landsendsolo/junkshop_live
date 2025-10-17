@@ -845,6 +845,13 @@
                             return;
                         }
                         
+                        // Validate email format
+                        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                        if (!emailRegex.test(this.checkoutForm.email)) {
+                            alert('Please enter a valid email address');
+                            return;
+                        }
+                        
                         if (this.deliveryMethod === 'delivery') {
                             if (!this.checkoutForm.address || !this.checkoutForm.city || !this.checkoutForm.postcode) {
                                 alert('Please fill in your delivery address');
@@ -869,11 +876,17 @@
                                 customerEmail: this.checkoutForm.email
                             });
                             
-                            // Save order as "pending_payment" (will be updated after payment via webhook)
-                            await this.savePendingOrder(result.data.checkoutId);
+                            // Verify we received the hosted checkout URL
+                            if (!result.data || !result.data.hostedCheckoutUrl) {
+                                throw new Error('Payment page URL not received from server');
+                            }
                             
-                            // Redirect to SumUp payment page
-                            window.location.href = `https://api.sumup.com/v0.1/checkouts/${result.data.checkoutId}`;
+                            // Save order as "pending_payment" (will be updated after payment via webhook)
+                            await this.savePendingOrder(result.data.checkoutId, result.data.checkoutReference);
+                            
+                            // Redirect to SumUp hosted checkout page
+                            console.log('Redirecting to SumUp payment page:', result.data.hostedCheckoutUrl);
+                            window.location.href = result.data.hostedCheckoutUrl;
                             
                         } catch (error) {
                             console.error('Checkout error:', error);
@@ -885,7 +898,7 @@
                             this.isLoadingPayment = false;
                         }
                     },
-                    async savePendingOrder(checkoutId) {
+                    async savePendingOrder(checkoutId, checkoutReference) {
                         const { db, collection, doc, addDoc, serverTimestamp } = window.firebaseShopServices;
                         
                         await addDoc(collection(db, "orders"), {
@@ -893,6 +906,7 @@
                             deliveryMethod: this.deliveryMethod,
                             paymentMethod: 'Card (SumUp)',
                             sumupCheckoutId: checkoutId,
+                            checkoutReference: checkoutReference,
                             items: this.cartItems.map(item => ({ 
                                 id: item.id, 
                                 name: item.name, 
@@ -908,8 +922,10 @@
                         // Store order info in sessionStorage for return page
                         sessionStorage.setItem('pendingOrder', JSON.stringify({
                             checkoutId: checkoutId,
+                            checkoutReference: checkoutReference,
                             items: this.cartItems.length,
-                            total: this.cartTotal
+                            total: this.cartTotal,
+                            customerEmail: this.checkoutForm.email
                         }));
                         
                         // Clear cart (will be restored if payment fails)

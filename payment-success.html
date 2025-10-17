@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Status - JunkShop</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #f5f5f5;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #d9a478;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-lg p-8 max-w-md w-full">
+            <!-- Loading State -->
+            <div id="loading-state" class="text-center">
+                <div class="loader mx-auto mb-4"></div>
+                <h2 class="text-xl font-semibold text-gray-800 mb-2">Verifying Payment...</h2>
+                <p class="text-gray-600">Please wait while we confirm your payment.</p>
+            </div>
+
+            <!-- Success State -->
+            <div id="success-state" class="text-center hidden">
+                <div class="mb-4">
+                    <svg class="mx-auto h-16 w-16 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-800 mb-2">Payment Successful!</h2>
+                <p class="text-gray-600 mb-4">Thank you for your purchase. Your order has been confirmed.</p>
+                <div class="bg-gray-50 rounded-lg p-4 mb-6">
+                    <p class="text-sm text-gray-600">Order Reference:</p>
+                    <p class="text-lg font-semibold text-gray-800" id="order-reference"></p>
+                </div>
+                <p class="text-sm text-gray-500 mb-6">A confirmation email will be sent to: <span id="customer-email" class="font-semibold"></span></p>
+                <a href="/" class="inline-block bg-[#d9a478] hover:bg-[#c88f61] text-white font-semibold py-3 px-6 rounded-lg transition duration-300">
+                    Return to Homepage
+                </a>
+            </div>
+
+            <!-- Pending State -->
+            <div id="pending-state" class="text-center hidden">
+                <div class="mb-4">
+                    <svg class="mx-auto h-16 w-16 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-800 mb-2">Payment Processing</h2>
+                <p class="text-gray-600 mb-4">Your payment is being processed. This may take a few moments.</p>
+                <div class="bg-gray-50 rounded-lg p-4 mb-6">
+                    <p class="text-sm text-gray-600">Order Reference:</p>
+                    <p class="text-lg font-semibold text-gray-800" id="order-reference-pending"></p>
+                </div>
+                <p class="text-sm text-gray-500 mb-6">You will receive a confirmation email once the payment is complete.</p>
+                <a href="/" class="inline-block bg-[#d9a478] hover:bg-[#c88f61] text-white font-semibold py-3 px-6 rounded-lg transition duration-300">
+                    Return to Homepage
+                </a>
+            </div>
+
+            <!-- Error State -->
+            <div id="error-state" class="text-center hidden">
+                <div class="mb-4">
+                    <svg class="mx-auto h-16 w-16 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-800 mb-2">Payment Failed</h2>
+                <p class="text-gray-600 mb-4" id="error-message">Your payment could not be processed. Please try again.</p>
+                <div class="space-y-3">
+                    <a href="/" class="block bg-[#d9a478] hover:bg-[#c88f61] text-white font-semibold py-3 px-6 rounded-lg transition duration-300">
+                        Try Again
+                    </a>
+                    <a href="/" class="block text-gray-600 hover:text-gray-800 font-semibold py-3 px-6">
+                        Return to Homepage
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDnxZSN9VgIp2YE1qiZJdH9PYAx2ES_3tc",
+            authDomain: "junkshop-website-gem.firebaseapp.com",
+            projectId: "junkshop-website-gem",
+            storageBucket: "junkshop-website-gem.firebasestorage.app",
+            messagingSenderId: "233182522533",
+            appId: "1:233182522533:web:9bc09e8730ca62e15df14c",
+            measurementId: "G-DL2J14LQP0"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        async function checkPaymentStatus() {
+            try {
+                // Get order info from session storage
+                const pendingOrderStr = sessionStorage.getItem('pendingOrder');
+                
+                if (!pendingOrderStr) {
+                    showError('No order information found. Please contact support if you made a payment.');
+                    return;
+                }
+
+                const pendingOrder = JSON.parse(pendingOrderStr);
+                const { checkoutId, checkoutReference, customerEmail } = pendingOrder;
+
+                if (!checkoutId) {
+                    showError('Invalid order information. Please contact support.');
+                    return;
+                }
+
+                // Query Firestore for the order
+                const ordersRef = collection(db, 'orders');
+                const q = query(ordersRef, where('sumupCheckoutId', '==', checkoutId));
+                const querySnapshot = await getDocs(q);
+
+                if (querySnapshot.empty) {
+                    showError('Order not found. Please contact support.');
+                    return;
+                }
+
+                const orderDoc = querySnapshot.docs[0];
+                const orderData = orderDoc.data();
+                const orderStatus = orderData.status;
+
+                // Display status based on order status
+                if (orderStatus === 'paid') {
+                    showSuccess(checkoutReference, customerEmail);
+                    // Clear pending order from session
+                    sessionStorage.removeItem('pendingOrder');
+                } else if (orderStatus === 'pending_payment') {
+                    showPending(checkoutReference);
+                } else if (orderStatus === 'payment_failed') {
+                    showError('Your payment was declined. Please try again with a different payment method.');
+                    sessionStorage.removeItem('pendingOrder');
+                } else {
+                    showPending(checkoutReference);
+                }
+
+            } catch (error) {
+                console.error('Error checking payment status:', error);
+                showError('Unable to verify payment status. Please contact support if you made a payment.');
+            }
+        }
+
+        function showSuccess(reference, email) {
+            document.getElementById('loading-state').classList.add('hidden');
+            document.getElementById('success-state').classList.remove('hidden');
+            document.getElementById('order-reference').textContent = reference;
+            document.getElementById('customer-email').textContent = email;
+        }
+
+        function showPending(reference) {
+            document.getElementById('loading-state').classList.add('hidden');
+            document.getElementById('pending-state').classList.remove('hidden');
+            document.getElementById('order-reference-pending').textContent = reference;
+        }
+
+        function showError(message) {
+            document.getElementById('loading-state').classList.add('hidden');
+            document.getElementById('error-state').classList.remove('hidden');
+            document.getElementById('error-message').textContent = message;
+        }
+
+        // Check status on page load
+        window.addEventListener('load', () => {
+            // Wait a moment to allow Firebase initialization
+            setTimeout(checkPaymentStatus, 1000);
+        });
+    </script>
+</body>
+</html>
