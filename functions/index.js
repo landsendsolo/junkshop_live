@@ -1,4 +1,6 @@
-const functions = require("firebase-functions");
+const {onCall, HttpsError} = require("firebase-functions/v2/https");
+const {onRequest} = require("firebase-functions/v2/https");
+const {defineString} = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const fetch = require("node-fetch");
 
@@ -9,27 +11,28 @@ admin.initializeApp();
 // Run this command in your terminal (see deployment guide):
 // firebase functions:config:set sumup.api_key="YOUR_SUMUP_API_KEY"
 // OR for OAuth: firebase functions:config:set sumup.access_token="YOUR_ACCESS_TOKEN"
-const SUMUP_API_KEY = functions.config().sumup?.api_key || process.env.SUMUP_API_KEY;
-const SUMUP_ACCESS_TOKEN = functions.config().sumup?.access_token || process.env.SUMUP_ACCESS_TOKEN;
+// For v2 functions, use environment variables directly or Firebase Params
+const SUMUP_API_KEY = process.env.SUMUP_API_KEY;
+const SUMUP_ACCESS_TOKEN = process.env.SUMUP_ACCESS_TOKEN;
 const SUMUP_AUTH = SUMUP_ACCESS_TOKEN || SUMUP_API_KEY;
 
 // Site URL for redirects
 const SITE_URL = "https://junkshop-website-gem.web.app";
 
-// Specify the region for the function
-exports.createSumupCheckout = functions.region('europe-west2').https.onCall(async (data, context) => {
+// Specify the region for the function using v2 syntax
+exports.createSumupCheckout = onCall({region: 'europe-west2'}, async (request) => {
   // Check if the user is authenticated (either an admin or an anonymous customer)
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
+  if (!request.auth) {
+    throw new HttpsError(
       "unauthenticated",
       "The function must be called while authenticated."
     );
   }
 
-  const { amount, currency, description, customerEmail } = data;
+  const { amount, currency, description, customerEmail } = request.data;
 
   if (!amount || !currency || !description || !customerEmail) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "invalid-argument",
       "Missing required data: amount, currency, description, customerEmail."
     );
@@ -37,7 +40,7 @@ exports.createSumupCheckout = functions.region('europe-west2').https.onCall(asyn
 
   // Validate amount (must be positive)
   if (amount <= 0) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "invalid-argument",
       "Amount must be greater than zero."
     );
@@ -45,7 +48,7 @@ exports.createSumupCheckout = functions.region('europe-west2').https.onCall(asyn
 
   if (!SUMUP_AUTH) {
     console.error("SumUp authentication not configured");
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "failed-precondition",
       "Payment system not configured. Please contact support."
     );
@@ -64,7 +67,7 @@ exports.createSumupCheckout = functions.region('europe-west2').https.onCall(asyn
     if (!merchantResponse.ok) {
       const errorBody = await merchantResponse.json().catch(() => ({}));
       console.error("SumUp merchant API Error:", errorBody);
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         "internal",
         `Failed to retrieve merchant information: ${errorBody.message || 'Unknown error'}`
       );
@@ -75,7 +78,7 @@ exports.createSumupCheckout = functions.region('europe-west2').https.onCall(asyn
 
     if (!merchantCode) {
       console.error("Merchant code not found in response:", merchantData);
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         "internal",
         "Merchant code not available. Please check SumUp account configuration."
       );
@@ -111,7 +114,7 @@ exports.createSumupCheckout = functions.region('europe-west2').https.onCall(asyn
     if (!response.ok) {
       const errorBody = await response.json().catch(() => ({}));
       console.error("SumUp checkout API Error:", errorBody);
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         "internal",
         `SumUp API error: ${errorBody.message || response.statusText || 'Unknown error'}`
       );
@@ -125,7 +128,7 @@ exports.createSumupCheckout = functions.region('europe-west2').https.onCall(asyn
     
     if (!hostedCheckoutUrl) {
       console.error("Hosted checkout URL not found in response:", checkoutResponse);
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         "internal",
         "Payment page URL not received. Please contact support."
       );
@@ -146,7 +149,7 @@ exports.createSumupCheckout = functions.region('europe-west2').https.onCall(asyn
       throw error;
     }
     
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "internal",
       "An unexpected error occurred while creating the checkout. Please try again."
     );
@@ -154,7 +157,7 @@ exports.createSumupCheckout = functions.region('europe-west2').https.onCall(asyn
 });
 
 // Webhook handler for SumUp payment notifications
-exports.handleSumupWebhook = functions.region('europe-west2').https.onRequest(async (req, res) => {
+exports.handleSumupWebhook = onRequest({region: 'europe-west2'}, async (req, res) => {
   // Only accept POST requests
   if (req.method !== 'POST') {
     return res.status(405).send('Method Not Allowed');
